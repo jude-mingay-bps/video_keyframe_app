@@ -13,6 +13,7 @@ import base64
 from io import BytesIO
 from PIL import Image
 import numpy as np
+import requests
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Change this in production
@@ -89,6 +90,144 @@ def extract_frames(video_path, start_time, duration=30, target_fps=5):
     
     cap.release()
     return frames
+
+def test_roboflow_connection(api_key, project_url):
+    """Test if Roboflow connection is valid"""
+    try:
+        # Extract workspace and project from URL
+        project_url = project_url.rstrip('/')
+        
+        if 'roboflow.com' in project_url:
+            parts = project_url.split('/')
+            for i, part in enumerate(parts):
+                if 'roboflow.com' in part and i + 2 < len(parts):
+                    workspace = parts[i + 1]
+                    project = parts[i + 2]
+                    break
+            else:
+                return False, "Could not parse workspace and project from URL"
+        else:
+            return False, "Invalid Roboflow URL format"
+        
+        # Test API endpoint - get project info
+        test_url = f"https://api.roboflow.com/{workspace}/{project}"
+        
+        params = {
+            'api_key': api_key
+        }
+        
+        response = requests.get(test_url, params=params)
+        
+        if response.status_code == 200:
+            return True, f"Connected to {workspace}/{project}"
+        else:
+            return False, f"Invalid project or API key: {response.text}"
+            
+    except Exception as e:
+        return False, f"Connection error: {str(e)}"
+
+def upload_to_roboflow_api(api_key, project_url, image_data, image_name, batch_name=None):
+    """Upload image to Roboflow project with optional batch name"""
+    try:
+        # Extract workspace and project from URL
+        project_url = project_url.rstrip('/')
+        
+        if 'roboflow.com' in project_url:
+            parts = project_url.split('/')
+            for i, part in enumerate(parts):
+                if 'roboflow.com' in part and i + 2 < len(parts):
+                    workspace = parts[i + 1]
+                    project = parts[i + 2]
+                    break
+            else:
+                return False, "Could not parse workspace and project from URL"
+        else:
+            return False, "Invalid Roboflow URL format"
+        
+        # Correct Roboflow Upload API endpoint format
+        upload_url = f"https://api.roboflow.com/dataset/{project}/upload"
+        
+        # Convert base64 to image file
+        image_bytes = base64.b64decode(image_data)
+        
+        # Save temporarily to ensure proper file upload
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
+            tmp_file.write(image_bytes)
+            tmp_path = tmp_file.name
+        
+        try:
+            # Prepare the multipart upload
+            with open(tmp_path, 'rb') as f:
+                files = {
+                    'file': (image_name, f, 'image/jpeg')
+                }
+                
+                # Parameters as query string
+                params = {
+                    'api_key': api_key,
+                    'name': image_name,
+                    'split': 'train'
+                }
+                
+                # Add batch name if provided
+                if batch_name:
+                    params['batch'] = batch_name
+                
+                print(f"Uploading to: {upload_url}")
+                print(f"Project: {project}")
+                print(f"Image name: {image_name}")
+                if batch_name:
+                    print(f"Batch name: {batch_name}")
+                
+                response = requests.post(
+                    upload_url,
+                    files=files,
+                    params=params
+                )
+                
+                print(f"Response status: {response.status_code}")
+                print(f"Response text: {response.text[:200]}...")
+                
+                if response.status_code == 200:
+                    # Check if response indicates success
+                    try:
+                        result = response.json()
+                        if 'error' in result:
+                            return False, f"Upload error: {result['error']}"
+                        elif 'success' in result and result['success']:
+                            return True, "Image uploaded successfully"
+                        elif 'id' in result:  # Some endpoints return an ID on success
+                            return True, f"Image uploaded successfully (ID: {result['id']})"
+                        else:
+                            # If no error and status is 200, assume success
+                            return True, "Image uploaded successfully"
+                    except:
+                        # If can't parse JSON but got 200, assume success
+                        return True, "Image uploaded successfully"
+                else:
+                    return False, f"Failed to upload (Status {response.status_code}): {response.text}"
+        finally:
+            # Clean up temp file
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+                
+    except Exception as e:
+        print(f"Exception during upload: {str(e)}")
+        return False, f"Error uploading to Roboflow: {str(e)}"
+
+@app.route('/test_roboflow', methods=['POST'])
+def test_roboflow_endpoint():
+    """Test Roboflow connection"""
+    data = request.json
+    api_key = data.get('api_key')
+    project_url = data.get('project_url')
+    
+    if not api_key or not project_url:
+        return jsonify({'success': False, 'error': 'Missing API key or project URL'})
+    
+    success, message = test_roboflow_connection(api_key, project_url)
+    return jsonify({'success': success, 'message': message})
 
 @app.route('/get_video_info', methods=['POST'])
 def get_video_info():
@@ -188,336 +327,939 @@ def index():
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Frame Selector</title>
+    <title>Video Frame Selector with Roboflow Integration</title>
     <style>
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
         }
-        
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-            background-color: #f5f5f5;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
             color: #333;
+            position: relative;
         }
-        
+
         .container {
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }
-        
+
         header {
-            background-color: #2c3e50;
-            color: white;
-            padding: 20px 0;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.2);
+            color: #333;
+            padding: 40px 0;
             margin-bottom: 30px;
+            border-radius: 24px;
+            position: relative;
+            overflow: hidden;
         }
-        
+
+        header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #667eea, #764ba2, #667eea);
+            background-size: 200% 100%;
+            animation: shimmer 3s ease-in-out infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { background-position: 200% 0; }
+            50% { background-position: -200% 0; }
+        }
+
         h1 {
             text-align: center;
-            font-size: 2em;
+            font-size: 2.8em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            margin-bottom: 10px;
         }
-        
-        .upload-section {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            font-size: 1.1em;
+            font-weight: 500;
+        }
+
+        .upload-section, .roboflow-section, .video-list, .frame-selector {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 35px;
+            border-radius: 24px;
+            box-shadow: 0 12px 40px 0 rgba(31, 38, 135, 0.1);
             margin-bottom: 30px;
+            animation: slideIn 0.6s ease-out;
+            position: relative;
         }
-        
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .roboflow-section {
+            border: 2px solid transparent;
+            background: linear-gradient(white, white) padding-box,
+                        linear-gradient(135deg, #e74c3c, #c0392b) border-box;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .roboflow-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #e74c3c, #c0392b, #e74c3c);
+            background-size: 200% 100%;
+            animation: pulse-red 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-red {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+
+        .roboflow-section h2 {
+            color: #e74c3c;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.5em;
+            font-weight: 700;
+        }
+
+        .roboflow-section h2::before {
+            content: '🔗';
+            font-size: 1.2em;
+        }
+
         .input-group {
-            margin-bottom: 20px;
+            margin-bottom: 28px;
+            position: relative;
         }
-        
+
         label {
             display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #555;
+            margin-bottom: 12px;
+            font-weight: 700;
+            color: #444;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            position: relative;
         }
-        
-        input[type="text"], input[type="file"], input[type="number"] {
+
+        label::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 0;
+            width: 30px;
+            height: 2px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 1px;
+        }
+
+        input[type="text"], input[type="file"], input[type="number"], input[type="password"] {
             width: 100%;
-            padding: 12px;
-            border: 2px solid #ddd;
-            border-radius: 5px;
+            padding: 18px 20px;
+            border: 2px solid #e8ecef;
+            border-radius: 16px;
             font-size: 16px;
-            transition: border-color 0.3s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            background: #fafbfc;
+            font-weight: 500;
+            position: relative;
         }
-        
-        input[type="text"]:focus, input[type="file"]:focus, input[type="number"]:focus {
+
+        input[type="text"]:focus, input[type="file"]:focus, input[type="number"]:focus, input[type="password"]:focus {
             outline: none;
-            border-color: #3498db;
+            border-color: #667eea;
+            background: white;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1), 0 8px 25px rgba(102, 126, 234, 0.15);
+            transform: translateY(-2px);
         }
-        
+
         .button-group {
             display: flex;
-            gap: 10px;
-            margin-top: 20px;
+            gap: 16px;
+            margin-top: 30px;
+            flex-wrap: wrap;
         }
-        
+
         button {
-            background-color: #3498db;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            padding: 12px 24px;
-            border-radius: 5px;
+            padding: 18px 32px;
+            border-radius: 16px;
             font-size: 16px;
+            font-weight: 700;
             cursor: pointer;
-            transition: background-color 0.3s;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 8px 25px 0 rgba(102, 126, 234, 0.3);
+            position: relative;
+            overflow: hidden;
+            min-width: 140px;
         }
-        
+
+        button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+
         button:hover {
-            background-color: #2980b9;
+            transform: translateY(-3px);
+            box-shadow: 0 12px 35px 0 rgba(102, 126, 234, 0.4);
         }
-        
+
+        button:hover::before {
+            left: 100%;
+        }
+
+        button:active {
+            transform: translateY(-1px);
+        }
+
         button:disabled {
-            background-color: #bdc3c7;
+            background: linear-gradient(135deg, #bdc3c7, #95a5a6);
             cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
-        
+
+        button:disabled::before {
+            display: none;
+        }
+
+        button.roboflow-btn {
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            box-shadow: 0 8px 25px 0 rgba(231, 76, 60, 0.3);
+        }
+
+        button.roboflow-btn:hover {
+            box-shadow: 0 12px 35px 0 rgba(231, 76, 60, 0.4);
+        }
+
         .video-list {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
+            background: rgba(255, 255, 255, 0.95);
         }
-        
+
+        .video-list h2 {
+            margin-bottom: 25px;
+            font-size: 1.6em;
+            color: #2c3e50;
+            font-weight: 800;
+        }
+
         .video-item {
-            padding: 15px;
-            border: 1px solid #eee;
-            border-radius: 5px;
-            margin-bottom: 10px;
+            padding: 24px;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 16px;
+            margin-bottom: 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-        }
-        
-        .video-item:hover {
-            background-color: #f8f9fa;
-        }
-        
-        .frame-selector {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            display: none;
-        }
-        
-        .video-preview {
-            margin: 20px 0;
-            text-align: center;
-        }
-        
-        .video-preview video {
-            max-width: 100%;
-            max-height: 400px;
-            border-radius: 5px;
-        }
-        
-        .timeline-container {
-            margin: 30px 0;
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-        }
-        
-        .timeline {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 2px solid transparent;
             position: relative;
-            height: 80px;
-            background: #e9ecef;
-            border-radius: 5px;
-            margin: 20px 0;
-            cursor: pointer;
             overflow: hidden;
         }
-        
+
+        .video-item::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            transform: scaleY(0);
+            transition: transform 0.3s ease;
+        }
+
+        .video-item:hover {
+            background: linear-gradient(135deg, white, #f8f9fa);
+            box-shadow: 0 8px 30px 0 rgba(0, 0, 0, 0.08);
+            transform: translateY(-2px);
+            border-color: rgba(102, 126, 234, 0.2);
+        }
+
+        .video-item:hover::before {
+            transform: scaleY(1);
+        }
+
+        .video-item span {
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 15px;
+        }
+
+        .video-item button {
+            padding: 10px 24px;
+            font-size: 14px;
+            background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+            min-width: auto;
+        }
+
+        .video-preview {
+            margin: 35px 0;
+            text-align: center;
+        }
+
+        .video-preview video {
+            max-width: 100%;
+            max-height: 450px;
+            border-radius: 20px;
+            box-shadow: 0 16px 60px rgba(0, 0, 0, 0.2);
+            border: 3px solid rgba(255, 255, 255, 0.8);
+        }
+
+        .timeline-container {
+            margin: 35px 0;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            padding: 30px;
+            border-radius: 20px;
+            border: 2px solid rgba(102, 126, 234, 0.1);
+        }
+
+        .timeline-container h3 {
+            margin-bottom: 20px;
+            color: #2c3e50;
+            font-size: 1.3em;
+            font-weight: 700;
+        }
+
+        .timeline {
+            position: relative;
+            height: 90px;
+            background: linear-gradient(to right, #e9ecef, #dee2e6);
+            border-radius: 16px;
+            margin: 25px 0;
+            cursor: pointer;
+            overflow: hidden;
+            box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+
         .timeline-selection {
             position: absolute;
             height: 100%;
-            background: rgba(52, 152, 219, 0.3);
-            border: 2px solid #3498db;
-            border-radius: 5px;
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.4), rgba(118, 75, 162, 0.4));
+            border: 3px solid #667eea;
+            border-radius: 16px;
             cursor: move;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
         }
-        
+
+        .timeline-selection:hover {
+            box-shadow: 0 0 30px rgba(102, 126, 234, 0.6);
+            background: linear-gradient(135deg, rgba(102, 126, 234, 0.5), rgba(118, 75, 162, 0.5));
+        }
+
         .timeline-handle {
             position: absolute;
-            width: 10px;
+            width: 16px;
             height: 100%;
-            background: #3498db;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             cursor: ew-resize;
+            transition: all 0.3s ease;
         }
-        
+
+        .timeline-handle:hover {
+            background: linear-gradient(135deg, #5a6fd8, #6b4d96);
+            width: 20px;
+        }
+
         .timeline-handle.left {
-            left: -5px;
-            border-radius: 5px 0 0 5px;
+            left: -8px;
+            border-radius: 16px 0 0 16px;
         }
-        
+
         .timeline-handle.right {
-            right: -5px;
-            border-radius: 0 5px 5px 0;
+            right: -8px;
+            border-radius: 0 16px 16px 0;
         }
-        
+
         .timeline-time {
             position: absolute;
-            bottom: -25px;
-            font-size: 12px;
-            background: #34495e;
+            bottom: -35px;
+            font-size: 13px;
+            background: linear-gradient(135deg, #34495e, #2c3e50);
             color: white;
-            padding: 2px 6px;
-            border-radius: 3px;
+            padding: 6px 14px;
+            border-radius: 8px;
             white-space: nowrap;
+            font-weight: 700;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         }
-        
+
         .timeline-time.start {
             left: 0;
         }
-        
+
         .timeline-time.end {
             right: 0;
         }
-        
+
         .timeline-info {
             display: flex;
             justify-content: space-between;
-            margin-top: 30px;
-            font-size: 14px;
+            margin-top: 40px;
+            font-size: 16px;
+            font-weight: 700;
+            color: #2c3e50;
         }
-        
+
         .segment-controls {
             display: flex;
-            gap: 15px;
+            gap: 24px;
             align-items: center;
-            margin: 20px 0;
+            margin: 30px 0;
+            padding: 24px;
+            background: linear-gradient(135deg, white, #f8f9fa);
+            border-radius: 16px;
+            border: 2px solid rgba(102, 126, 234, 0.1);
+            flex-wrap: wrap;
         }
-        
+
         .segment-controls input {
-            width: 100px;
+            width: 120px;
+            padding: 12px 16px;
+            font-weight: 600;
         }
-        
+
+        .segment-controls button {
+            padding: 12px 24px;
+            font-size: 14px;
+        }
+
+        .segment-controls label {
+            margin: 0;
+            font-size: 15px;
+            color: #555;
+            font-weight: 600;
+        }
+
         .frame-display {
             text-align: center;
-            margin: 20px 0;
+            margin: 35px 0;
         }
-        
+
         .frame-display img {
             max-width: 100%;
-            max-height: 500px;
-            border: 3px solid #ddd;
-            border-radius: 5px;
+            max-height: 550px;
+            border: 4px solid #e8ecef;
+            border-radius: 20px;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 16px 50px rgba(0, 0, 0, 0.12);
         }
-        
+
         .frame-display img.selected {
             border-color: #27ae60;
-            box-shadow: 0 0 20px rgba(39, 174, 96, 0.3);
+            box-shadow: 0 0 40px rgba(39, 174, 96, 0.5), 0 20px 60px rgba(0, 0, 0, 0.15);
+            transform: scale(1.02);
         }
-        
+
         .frame-controls {
             display: flex;
             justify-content: center;
-            gap: 20px;
-            margin: 20px 0;
+            gap: 24px;
+            margin: 35px 0;
+            flex-wrap: wrap;
         }
-        
+
+        .frame-controls button {
+            min-width: 160px;
+        }
+
         .frame-info {
             text-align: center;
-            font-size: 18px;
-            margin: 15px 0;
+            font-size: 22px;
+            margin: 25px 0;
+            font-weight: 700;
+            color: #2c3e50;
+            padding: 15px;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            border-radius: 12px;
+            border: 2px solid rgba(102, 126, 234, 0.1);
         }
-        
+
         .selected-indicator {
             color: #27ae60;
-            font-weight: bold;
+            font-weight: 900;
+            animation: pulse 1.8s ease-in-out infinite;
+            text-shadow: 0 0 10px rgba(39, 174, 96, 0.3);
         }
-        
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.05); }
+        }
+
         .progress-bar {
             width: 100%;
-            height: 30px;
-            background-color: #ecf0f1;
-            border-radius: 15px;
-            margin: 20px 0;
+            height: 40px;
+            background: linear-gradient(135deg, #ecf0f1, #bdc3c7);
+            border-radius: 20px;
+            margin: 30px 0;
             overflow: hidden;
+            box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            position: relative;
         }
-        
+
         .progress-fill {
             height: 100%;
-            background-color: #3498db;
-            transition: width 0.3s ease;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             display: flex;
             align-items: center;
             justify-content: center;
             color: white;
-            font-weight: bold;
+            font-weight: 800;
+            font-size: 16px;
+            position: relative;
+            overflow: hidden;
         }
-        
+
+        .progress-fill::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+            animation: progress-shine 2s ease-in-out infinite;
+        }
+
+        @keyframes progress-shine {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
         .instructions {
-            background-color: #ecf0f1;
-            padding: 15px;
-            border-radius: 5px;
-            margin: 20px 0;
+            background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+            padding: 25px;
+            border-radius: 16px;
+            margin: 30px 0;
             text-align: center;
+            font-size: 17px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+            border: 2px solid rgba(102, 126, 234, 0.1);
+            font-weight: 500;
         }
-        
+
         .keyboard-hint {
             display: inline-block;
-            background-color: #34495e;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 3px 8px;
-            border-radius: 3px;
-            margin: 0 5px;
-            font-family: monospace;
+            padding: 8px 16px;
+            border-radius: 8px;
+            margin: 0 6px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+            font-weight: 700;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+            font-size: 14px;
         }
-        
+
         .loading {
             display: none;
             text-align: center;
-            padding: 20px;
+            padding: 50px;
         }
-        
+
         .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-top: 5px solid #667eea;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
+            width: 70px;
+            height: 70px;
             animation: spin 1s linear infinite;
-            margin: 0 auto;
+            margin: 0 auto 25px;
         }
-        
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        
-        .error {
-            color: #e74c3c;
-            padding: 10px;
-            background-color: #fee;
-            border-radius: 5px;
-            margin: 10px 0;
+
+        .loading p {
+            font-size: 18px;
+            font-weight: 600;
+            color: #555;
         }
-        
-        .success {
-            color: #27ae60;
-            padding: 10px;
-            background-color: #efe;
-            border-radius: 5px;
-            margin: 10px 0;
+
+        .roboflow-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 18px;
+            border-radius: 25px;
+            font-size: 14px;
+            margin-left: 16px;
+            font-weight: 700;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            gap: 8px;
+        }
+
+        .roboflow-status::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            animation: status-pulse 2s ease-in-out infinite;
+        }
+
+        .roboflow-status.connected {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+            box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
+        }
+
+        .roboflow-status.connected::before {
+            background: #fff;
+        }
+
+        .roboflow-status.disconnected {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
+        }
+
+        .roboflow-status.disconnected::before {
+            background: #fff;
+        }
+
+        @keyframes status-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Toast Notification System */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            max-width: 400px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 20px 24px;
+            margin-bottom: 16px;
+            box-shadow: 0 16px 60px rgba(0, 0, 0, 0.15);
+            transform: translateX(400px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            pointer-events: auto;
+            position: relative;
+            overflow: hidden;
+            max-width: 100%;
+            word-wrap: break-word;
+        }
+
+        .toast.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+
+        .toast.hide {
+            transform: translateX(400px);
+            opacity: 0;
+        }
+
+        .toast::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+        }
+
+        .toast.success::before {
+            background: linear-gradient(135deg, #27ae60, #229954);
+        }
+
+        .toast.error::before {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+        }
+
+        .toast.warning::before {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+        }
+
+        .toast-content {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .toast-icon {
+            flex-shrink: 0;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            margin-top: 2px;
+        }
+
+        .toast.success .toast-icon {
+            background: linear-gradient(135deg, #27ae60, #229954);
+            color: white;
+        }
+
+        .toast.error .toast-icon {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+
+        .toast.warning .toast-icon {
+            background: linear-gradient(135deg, #f39c12, #e67e22);
+            color: white;
+        }
+
+        .toast.info .toast-icon {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .toast-message {
+            flex: 1;
+            font-size: 15px;
+            font-weight: 600;
+            color: #2c3e50;
+            line-height: 1.4;
+        }
+
+        .toast-close {
+            flex-shrink: 0;
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: #95a5a6;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+            margin-top: 2px;
+        }
+
+        .toast-close:hover {
+            background: rgba(149, 165, 166, 0.1);
+            color: #7f8c8d;
+        }
+
+        /* Progress Bar for Downloads/Uploads */
+        .download-progress, .upload-progress {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+
+        .download-progress-fill, .upload-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            border-radius: 3px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .toast.progress .toast-message {
+            margin-bottom: 8px;
+        }
+
+        /* Enhanced Loading States */
+        .button-loading {
+            position: relative;
+            color: transparent !important;
+        }
+
+        .button-loading::after {
+            content: '';
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            top: 50%;
+            left: 50%;
+            margin-left: -10px;
+            margin-top: -10px;
+            border: 2px solid transparent;
+            border-top-color: #ffffff;
+            border-radius: 50%;
+            animation: button-spin 1s ease infinite;
+        }
+
+        @keyframes button-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            h1 {
+                font-size: 2.2em;
+            }
+            
+            .button-group {
+                flex-direction: column;
+            }
+            
+            button {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .segment-controls {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 16px;
+            }
+            
+            .segment-controls input {
+                width: 100%;
+            }
+            
+            .frame-controls {
+                flex-direction: column;
+            }
+            
+            .frame-controls button {
+                width: 100%;
+            }
+            
+            .toast-container {
+                top: 10px;
+                right: 10px;
+                left: 10px;
+                max-width: none;
+            }
+            
+            .toast {
+                transform: translateY(-100px);
+            }
+            
+            .toast.show {
+                transform: translateY(0);
+            }
+            
+            .toast.hide {
+                transform: translateY(-100px);
+            }
+        }
+
+        @media (max-width: 480px) {
+            header {
+                padding: 25px 0;
+            }
+            
+            h1 {
+                font-size: 1.8em;
+            }
+            
+            .upload-section, .roboflow-section, .video-list, .frame-selector {
+                padding: 20px;
+                border-radius: 16px;
+            }
+            
+            .timeline {
+                height: 70px;
+            }
+            
+            .timeline-handle {
+                width: 12px;
+            }
+            
+            .timeline-handle:hover {
+                width: 12px;
+            }
         }
     </style>
 </head>
 <body>
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+
     <header>
-        <h1>Video Frame Selector</h1>
+        <h1>Video Frame Selector with Roboflow Integration</h1>
+        <div class="subtitle">Extract and manage video frames with seamless Roboflow integration</div>
     </header>
     
     <div class="container">
+        <div class="roboflow-section">
+            <h2>Roboflow Configuration <span id="roboflow-status" class="roboflow-status disconnected">Not Connected</span></h2>
+            
+            <div class="input-group">
+                <label for="roboflow-url">Roboflow Project URL:</label>
+                <input type="text" id="roboflow-url" placeholder="https://app.roboflow.com/workspace/project">
+            </div>
+            
+            <div class="input-group">
+                <label for="roboflow-api-key">Roboflow API Key:</label>
+                <input type="password" id="roboflow-api-key" placeholder="Your Roboflow API key">
+            </div>
+            
+            <button onclick="saveRoboflowConfig()" class="roboflow-btn">Save Configuration</button>
+            <button onclick="testRoboflowConnection()" style="margin-left: 10px;">Test Connection</button>
+        </div>
+        
         <div class="upload-section">
             <h2>Add Videos</h2>
             
@@ -606,8 +1348,6 @@ def index():
                 <button onclick="finishVideo()" style="width: 100%; margin-top: 20px;">Finish This Video</button>
             </div>
         </div>
-        
-        <div id="messages"></div>
     </div>
     
     <script>
@@ -622,6 +1362,171 @@ def index():
         let segmentDuration = 30;
         let isDragging = false;
         let dragType = null;
+        let roboflowConfig = {
+            url: '',
+            apiKey: '',
+            isConfigured: false
+        };
+        
+        // Toast Notification System
+        function showToast(message, type = 'info', duration = 5000, showProgress = false) {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            const icons = {
+                success: '✓',
+                error: '✗',
+                warning: '⚠',
+                info: 'ℹ'
+            };
+            
+            toast.innerHTML = `
+                <div class="toast-content">
+                    <div class="toast-icon">${icons[type] || icons.info}</div>
+                    <div class="toast-message">${message}</div>
+                    <button class="toast-close" onclick="removeToast(this.parentElement.parentElement)">×</button>
+                </div>
+                ${showProgress ? '<div class="download-progress"><div class="download-progress-fill"></div></div>' : ''}
+            `;
+            
+            toastContainer.appendChild(toast);
+            
+            // Trigger animation
+            setTimeout(() => toast.classList.add('show'), 10);
+            
+            // Auto remove
+            if (duration > 0) {
+                setTimeout(() => removeToast(toast), duration);
+            }
+            
+            return toast;
+        }
+        
+        function removeToast(toast) {
+            toast.classList.add('hide');
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.parentElement.removeChild(toast);
+                }
+            }, 400);
+        }
+        
+        function updateToastProgress(toast, progress) {
+            const progressFill = toast.querySelector('.download-progress-fill, .upload-progress-fill');
+            if (progressFill) {
+                progressFill.style.width = `${progress}%`;
+            }
+        }
+        
+        function setButtonLoading(button, loading) {
+            if (loading) {
+                button.disabled = true;
+                button.classList.add('button-loading');
+                button.dataset.originalText = button.textContent;
+                button.textContent = 'Loading...';
+            } else {
+                button.disabled = false;
+                button.classList.remove('button-loading');
+                if (button.dataset.originalText) {
+                    button.textContent = button.dataset.originalText;
+                    delete button.dataset.originalText;
+                }
+            }
+        }
+        
+        // Load Roboflow config from localStorage
+        function loadRoboflowConfig() {
+            const saved = localStorage.getItem('roboflowConfig');
+            if (saved) {
+                roboflowConfig = JSON.parse(saved);
+                document.getElementById('roboflow-url').value = roboflowConfig.url || '';
+                document.getElementById('roboflow-api-key').value = roboflowConfig.apiKey || '';
+                updateRoboflowStatus();
+            }
+        }
+        
+        // Save Roboflow configuration
+        function saveRoboflowConfig() {
+            const url = document.getElementById('roboflow-url').value.trim();
+            const apiKey = document.getElementById('roboflow-api-key').value.trim();
+            
+            if (!url || !apiKey) {
+                showToast('Please enter both Roboflow project URL and API key', 'error');
+                return;
+            }
+            
+            roboflowConfig = {
+                url: url,
+                apiKey: apiKey,
+                isConfigured: true
+            };
+            
+            localStorage.setItem('roboflowConfig', JSON.stringify(roboflowConfig));
+            updateRoboflowStatus();
+            showToast('Roboflow configuration saved successfully', 'success');
+        }
+        
+        // Test Roboflow connection
+        async function testRoboflowConnection() {
+            const url = document.getElementById('roboflow-url').value.trim();
+            const apiKey = document.getElementById('roboflow-api-key').value.trim();
+            const button = event.target;
+            
+            if (!url || !apiKey) {
+                showToast('Please enter both Roboflow project URL and API key', 'error');
+                return;
+            }
+            
+            setButtonLoading(button, true);
+            const loadingToast = showToast('Testing connection...', 'info', 0);
+            
+            try {
+                const response = await fetch('/test_roboflow', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        api_key: apiKey,
+                        project_url: url
+                    })
+                });
+                
+                const data = await response.json();
+                removeToast(loadingToast);
+                
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    // Save config if test successful
+                    saveRoboflowConfig();
+                } else {
+                    showToast(data.message || 'Connection test failed', 'error');
+                }
+            } catch (error) {
+                removeToast(loadingToast);
+                showToast('Error testing connection: ' + error.message, 'error');
+            } finally {
+                setButtonLoading(button, false);
+            }
+        }
+        
+        function updateRoboflowStatus() {
+            const status = document.getElementById('roboflow-status');
+            if (roboflowConfig.isConfigured) {
+                status.textContent = 'Connected';
+                status.className = 'roboflow-status connected';
+            } else {
+                status.textContent = 'Not Connected';
+                status.className = 'roboflow-status disconnected';
+            }
+        }
+        
+        // Initialize on page load
+        window.addEventListener('load', () => {
+            loadRoboflowConfig();
+            initializeTimeline();
+        });
         
         // Keyboard event listeners
         document.addEventListener('keydown', (e) => {
@@ -725,11 +1630,6 @@ def index():
             });
         }
         
-        // Initialize timeline on page load
-        window.addEventListener('load', () => {
-            initializeTimeline();
-        });
-        
         function updateTimeline() {
             if (!videoDuration || videoDuration === 0) {
                 console.warn('Video duration not set');
@@ -776,26 +1676,17 @@ def index():
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         }
         
-        function showMessage(message, type = 'info') {
-            const messagesDiv = document.getElementById('messages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = type === 'error' ? 'error' : 'success';
-            messageDiv.textContent = message;
-            messagesDiv.appendChild(messageDiv);
-            
-            setTimeout(() => {
-                messageDiv.remove();
-            }, 5000);
-        }
-        
         async function addYouTubeVideo() {
             const url = document.getElementById('youtube-url').value.trim();
+            const button = event.target;
+            
             if (!url) {
-                showMessage('Please enter a YouTube URL', 'error');
+                showToast('Please enter a YouTube URL', 'error');
                 return;
             }
             
-            showMessage('Downloading YouTube video... This may take a moment.');
+            setButtonLoading(button, true);
+            const progressToast = showToast('Downloading YouTube video...', 'info', 0, true);
             
             try {
                 const response = await fetch('/add_youtube', {
@@ -807,27 +1698,36 @@ def index():
                 });
                 
                 const data = await response.json();
+                removeToast(progressToast);
+                
                 if (data.success) {
                     videos.push(data.video);
                     updateVideoList();
                     document.getElementById('youtube-url').value = '';
-                    showMessage('YouTube video added successfully');
+                    showToast('YouTube video added successfully', 'success');
                 } else {
-                    showMessage(data.error || 'Failed to add YouTube video', 'error');
+                    showToast(data.error || 'Failed to add YouTube video', 'error');
                 }
             } catch (error) {
-                showMessage('Error adding YouTube video: ' + error.message, 'error');
+                removeToast(progressToast);
+                showToast('Error adding YouTube video: ' + error.message, 'error');
+            } finally {
+                setButtonLoading(button, false);
             }
         }
         
         async function uploadFile() {
             const fileInput = document.getElementById('file-upload');
             const file = fileInput.files[0];
+            const button = event.target;
             
             if (!file) {
-                showMessage('Please select a file', 'error');
+                showToast('Please select a file', 'error');
                 return;
             }
+            
+            setButtonLoading(button, true);
+            const progressToast = showToast('Uploading file...', 'info', 0, true);
             
             const formData = new FormData();
             formData.append('file', file);
@@ -839,16 +1739,21 @@ def index():
                 });
                 
                 const data = await response.json();
+                removeToast(progressToast);
+                
                 if (data.success) {
                     videos.push(data.video);
                     updateVideoList();
                     fileInput.value = '';
-                    showMessage('File uploaded successfully');
+                    showToast('File uploaded successfully', 'success');
                 } else {
-                    showMessage(data.error || 'Failed to upload file', 'error');
+                    showToast(data.error || 'Failed to upload file', 'error');
                 }
             } catch (error) {
-                showMessage('Error uploading file', 'error');
+                removeToast(progressToast);
+                showToast('Error uploading file: ' + error.message, 'error');
+            } finally {
+                setButtonLoading(button, false);
             }
         }
         
@@ -876,7 +1781,7 @@ def index():
         
         function startProcessing() {
             if (videos.length === 0) {
-                showMessage('No videos to process', 'error');
+                showToast('No videos to process', 'error');
                 return;
             }
             
@@ -884,6 +1789,7 @@ def index():
             document.getElementById('frame-selector').style.display = 'block';
             document.querySelector('.upload-section').style.display = 'none';
             document.getElementById('video-list').style.display = 'none';
+            document.querySelector('.roboflow-section').style.display = 'none';
             
             // Reset video duration to ensure proper initialization
             videoDuration = 0;
@@ -893,7 +1799,7 @@ def index():
         
         async function loadCurrentVideo() {
             if (currentVideoIndex >= videos.length) {
-                showMessage('All videos processed!');
+                showToast('All videos processed!', 'success');
                 resetInterface();
                 return;
             }
@@ -936,13 +1842,13 @@ def index():
                     // Handle video load error
                     videoPlayer.addEventListener('error', (e) => {
                         console.error('Video load error:', e);
-                        showMessage('Error loading video preview. You can still process frames.', 'error');
+                        showToast('Error loading video preview. You can still process frames.', 'warning');
                     }, { once: true });
                 } else {
-                    showMessage('Error loading video info: ' + (data.error || 'Unknown error'), 'error');
+                    showToast('Error loading video info: ' + (data.error || 'Unknown error'), 'error');
                 }
             } catch (error) {
-                showMessage('Error loading video info: ' + error.message, 'error');
+                showToast('Error loading video info: ' + error.message, 'error');
             }
         }
         
@@ -971,12 +1877,13 @@ def index():
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('frame-viewer').style.display = 'block';
                     displayFrame();
+                    showToast(`Loaded ${frames.length} frames successfully`, 'success');
                 } else {
-                    showMessage(data.error || 'Failed to extract frames', 'error');
+                    showToast(data.error || 'Failed to extract frames', 'error');
                     document.getElementById('loading').style.display = 'none';
                 }
             } catch (error) {
-                showMessage('Error extracting frames', 'error');
+                showToast('Error extracting frames: ' + error.message, 'error');
                 document.getElementById('loading').style.display = 'none';
             }
         }
@@ -1025,8 +1932,10 @@ def index():
         function toggleSelection() {
             if (selectedFrames.has(currentFrameIndex)) {
                 selectedFrames.delete(currentFrameIndex);
+                showToast('Frame deselected', 'info', 2000);
             } else {
                 selectedFrames.add(currentFrameIndex);
+                showToast('Frame selected', 'success', 2000);
             }
             displayFrame();
         }
@@ -1037,6 +1946,16 @@ def index():
                     return;
                 }
             } else {
+                // Check if Roboflow is configured
+                const uploadToRoboflow = roboflowConfig.isConfigured;
+                
+                let uploadToast = null;
+                if (uploadToRoboflow) {
+                    uploadToast = showToast(`Saving ${selectedFrames.size} frames and uploading to Roboflow...`, 'info', 0, true);
+                } else {
+                    uploadToast = showToast(`Saving ${selectedFrames.size} frames...`, 'info', 0);
+                }
+                
                 // Save selected frames
                 try {
                     const response = await fetch('/save_frames', {
@@ -1047,18 +1966,38 @@ def index():
                         body: JSON.stringify({
                             video_id: currentVideoId,
                             selected_indices: Array.from(selectedFrames),
-                            frames: frames.filter((_, idx) => selectedFrames.has(idx))
+                            frames: frames.filter((_, idx) => selectedFrames.has(idx)),
+                            upload_to_roboflow: uploadToRoboflow,
+                            roboflow_config: uploadToRoboflow ? roboflowConfig : null
                         })
                     });
                     
                     const data = await response.json();
+                    removeToast(uploadToast);
+                    
                     if (data.success) {
-                        showMessage(`Saved ${selectedFrames.size} frames to ${data.output_dir}`);
+                        let message = `Saved ${selectedFrames.size} frames to ${data.output_dir}`;
+                        let toastType = 'success';
+                        
+                        if (data.roboflow_results) {
+                            const uploaded = data.roboflow_results.filter(r => r.success).length;
+                            const failed = data.roboflow_results.filter(r => !r.success).length;
+                            
+                            if (failed > 0) {
+                                message += `. Roboflow: ${uploaded} uploaded, ${failed} failed`;
+                                toastType = 'warning';
+                            } else {
+                                message += `. All ${uploaded} frames uploaded to Roboflow successfully`;
+                            }
+                        }
+                        
+                        showToast(message, toastType);
                     } else {
-                        showMessage('Error saving frames', 'error');
+                        showToast('Error saving frames: ' + (data.error || 'Unknown error'), 'error');
                     }
                 } catch (error) {
-                    showMessage('Error saving frames', 'error');
+                    removeToast(uploadToast);
+                    showToast('Error saving frames: ' + error.message, 'error');
                 }
             }
             
@@ -1070,6 +2009,7 @@ def index():
         function resetInterface() {
             document.getElementById('frame-selector').style.display = 'none';
             document.querySelector('.upload-section').style.display = 'block';
+            document.querySelector('.roboflow-section').style.display = 'block';
             videos = [];
             updateVideoList();
         }
@@ -1216,11 +2156,13 @@ def extract_frames_endpoint():
 
 @app.route('/save_frames', methods=['POST'])
 def save_frames():
-    """Save selected frames to disk"""
+    """Save selected frames to disk and optionally upload to Roboflow"""
     data = request.json
     video_id = data.get('video_id')
     selected_indices = data.get('selected_indices', [])
     frames_data = data.get('frames', [])
+    upload_to_roboflow = data.get('upload_to_roboflow', False)
+    roboflow_config = data.get('roboflow_config', {})
     
     if not video_id or 'videos' not in session or video_id not in session['videos']:
         return jsonify({'success': False, 'error': 'Video not found'})
@@ -1233,6 +2175,8 @@ def save_frames():
     output_dir = os.path.join(OUTPUT_FOLDER, f'{video_name}_{timestamp}')
     os.makedirs(output_dir, exist_ok=True)
     
+    roboflow_results = []
+    
     # Save each frame
     for i, frame_data in enumerate(frames_data):
         frame_bytes = base64.b64decode(frame_data['data'])
@@ -1242,12 +2186,36 @@ def save_frames():
         filename = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.png'
         filepath = os.path.join(output_dir, filename)
         cv2.imwrite(filepath, frame)
+        
+        # Upload to Roboflow if configured
+        if upload_to_roboflow and roboflow_config.get('apiKey') and roboflow_config.get('url'):
+            # Use just the frame name without video name prefix for cleaner organization
+            image_name = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.jpg'
+            
+            # Add batch name metadata using the video name
+            success, message = upload_to_roboflow_api(
+                roboflow_config['apiKey'],
+                roboflow_config['url'],
+                frame_data['data'],
+                image_name,
+                batch_name=video_name  # Add batch name parameter
+            )
+            roboflow_results.append({
+                'frame': i,
+                'success': success,
+                'message': message
+            })
     
-    return jsonify({
+    response_data = {
         'success': True,
         'output_dir': output_dir,
         'frame_count': len(frames_data)
-    })
+    }
+    
+    if roboflow_results:
+        response_data['roboflow_results'] = roboflow_results
+    
+    return jsonify(response_data)
 
 @app.route('/cleanup', methods=['POST'])
 def cleanup():
