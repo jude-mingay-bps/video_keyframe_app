@@ -57,7 +57,7 @@ def download_youtube_video(url, output_path):
         print(f"Error downloading YouTube video: {e}")
         return False, str(e)
 
-def extract_frames(video_path, start_time, duration=30, target_fps=5):
+def extract_frames(video_path, start_time, duration=30, target_fps=30):
     """Extract frames from video at specified fps"""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -126,8 +126,8 @@ def test_roboflow_connection(api_key, project_url):
     except Exception as e:
         return False, f"Connection error: {str(e)}"
 
-def upload_to_roboflow_api(api_key, project_url, image_data, image_name, batch_name=None):
-    """Upload image to Roboflow project with optional batch name"""
+def upload_to_roboflow_api(api_key, project_url, image_data, image_name, split='train', batch_name=None):
+    """Upload image to Roboflow project with optional batch name and split"""
     try:
         # Extract workspace and project from URL
         project_url = project_url.rstrip('/')
@@ -167,7 +167,7 @@ def upload_to_roboflow_api(api_key, project_url, image_data, image_name, batch_n
                 params = {
                     'api_key': api_key,
                     'name': image_name,
-                    'split': 'train'
+                    'split': split # Use the provided split
                 }
                 
                 # Add batch name if provided
@@ -177,6 +177,7 @@ def upload_to_roboflow_api(api_key, project_url, image_data, image_name, batch_n
                 print(f"Uploading to: {upload_url}")
                 print(f"Project: {project}")
                 print(f"Image name: {image_name}")
+                print(f"Split: {split}")
                 if batch_name:
                     print(f"Batch name: {batch_name}")
                 
@@ -464,6 +465,12 @@ def index():
             margin-bottom: 28px;
             position: relative;
         }
+        
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 24px;
+        }
 
         label {
             display: block;
@@ -487,7 +494,7 @@ def index():
             border-radius: 1px;
         }
 
-        input[type="text"], input[type="file"], input[type="number"], input[type="password"] {
+        input[type="text"], input[type="file"], input[type="number"], input[type="password"], select {
             width: 100%;
             padding: 18px 20px;
             border: 2px solid #e8ecef;
@@ -498,8 +505,18 @@ def index():
             font-weight: 500;
             position: relative;
         }
+        
+        select {
+             -webkit-appearance: none;
+             -moz-appearance: none;
+             appearance: none;
+             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23667eea' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z'/%3E%3C/svg%3E");
+             background-repeat: no-repeat;
+             background-position: right 20px center;
+             padding-right: 50px;
+        }
 
-        input[type="text"]:focus, input[type="file"]:focus, input[type="number"]:focus, input[type="password"]:focus {
+        input[type="text"]:focus, input[type="file"]:focus, input[type="number"]:focus, input[type="password"]:focus, select:focus {
             outline: none;
             border-color: #667eea;
             background: white;
@@ -1234,7 +1251,6 @@ def index():
     </style>
 </head>
 <body>
-    <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
 
     <header>
@@ -1255,9 +1271,27 @@ def index():
                 <label for="roboflow-api-key">Roboflow API Key:</label>
                 <input type="password" id="roboflow-api-key" placeholder="Your Roboflow API key">
             </div>
+
+            <div class="input-grid">
+                <div class="input-group">
+                    <label for="roboflow-batch-name">Custom Batch Name (Optional):</label>
+                    <input type="text" id="roboflow-batch-name" placeholder="Defaults to video name">
+                </div>
+
+                <div class="input-group">
+                    <label for="roboflow-split">Upload to Split:</label>
+                    <select id="roboflow-split">
+                        <option value="train" selected>Train</option>
+                        <option value="valid">Valid</option>
+                        <option value="test">Test</option>
+                    </select>
+                </div>
+            </div>
             
-            <button onclick="saveRoboflowConfig()" class="roboflow-btn">Save Configuration</button>
-            <button onclick="testRoboflowConnection()" style="margin-left: 10px;">Test Connection</button>
+            <div class="button-group">
+                <button onclick="saveRoboflowConfig()" class="roboflow-btn">Save Configuration</button>
+                <button onclick="testRoboflowConnection()">Test Connection</button>
+            </div>
         </div>
         
         <div class="upload-section">
@@ -1365,6 +1399,8 @@ def index():
         let roboflowConfig = {
             url: '',
             apiKey: '',
+            batchName: '',
+            split: 'train',
             isConfigured: false
         };
         
@@ -1442,6 +1478,8 @@ def index():
                 roboflowConfig = JSON.parse(saved);
                 document.getElementById('roboflow-url').value = roboflowConfig.url || '';
                 document.getElementById('roboflow-api-key').value = roboflowConfig.apiKey || '';
+                document.getElementById('roboflow-batch-name').value = roboflowConfig.batchName || '';
+                document.getElementById('roboflow-split').value = roboflowConfig.split || 'train';
                 updateRoboflowStatus();
             }
         }
@@ -1450,6 +1488,8 @@ def index():
         function saveRoboflowConfig() {
             const url = document.getElementById('roboflow-url').value.trim();
             const apiKey = document.getElementById('roboflow-api-key').value.trim();
+            const batchName = document.getElementById('roboflow-batch-name').value.trim();
+            const split = document.getElementById('roboflow-split').value;
             
             if (!url || !apiKey) {
                 showToast('Please enter both Roboflow project URL and API key', 'error');
@@ -1459,6 +1499,8 @@ def index():
             roboflowConfig = {
                 url: url,
                 apiKey: apiKey,
+                batchName: batchName,
+                split: split,
                 isConfigured: true
             };
             
@@ -1513,11 +1555,11 @@ def index():
         
         function updateRoboflowStatus() {
             const status = document.getElementById('roboflow-status');
-            if (roboflowConfig.isConfigured) {
-                status.textContent = 'Connected';
+            if (roboflowConfig.isConfigured && roboflowConfig.url && roboflowConfig.apiKey) {
+                status.textContent = 'Configured';
                 status.className = 'roboflow-status connected';
             } else {
-                status.textContent = 'Not Connected';
+                status.textContent = 'Not Configured';
                 status.className = 'roboflow-status disconnected';
             }
         }
@@ -1932,10 +1974,8 @@ def index():
         function toggleSelection() {
             if (selectedFrames.has(currentFrameIndex)) {
                 selectedFrames.delete(currentFrameIndex);
-                showToast('Frame deselected', 'info', 2000);
             } else {
                 selectedFrames.add(currentFrameIndex);
-                showToast('Frame selected', 'success', 2000);
             }
             displayFrame();
         }
@@ -1947,7 +1987,7 @@ def index():
                 }
             } else {
                 // Check if Roboflow is configured
-                const uploadToRoboflow = roboflowConfig.isConfigured;
+                const uploadToRoboflow = roboflowConfig.isConfigured && roboflowConfig.apiKey && roboflowConfig.url;
                 
                 let uploadToast = null;
                 if (uploadToRoboflow) {
@@ -1956,6 +1996,13 @@ def index():
                     uploadToast = showToast(`Saving ${selectedFrames.size} frames...`, 'info', 0);
                 }
                 
+                // Get upload options from the form for this specific upload
+                const finalRoboflowConfig = {
+                    ...roboflowConfig,
+                    batchName: document.getElementById('roboflow-batch-name').value.trim(),
+                    split: document.getElementById('roboflow-split').value
+                };
+
                 // Save selected frames
                 try {
                     const response = await fetch('/save_frames', {
@@ -1968,7 +2015,7 @@ def index():
                             selected_indices: Array.from(selectedFrames),
                             frames: frames.filter((_, idx) => selectedFrames.has(idx)),
                             upload_to_roboflow: uploadToRoboflow,
-                            roboflow_config: uploadToRoboflow ? roboflowConfig : null
+                            roboflow_config: uploadToRoboflow ? finalRoboflowConfig : null
                         })
                     });
                     
@@ -1991,7 +2038,7 @@ def index():
                             }
                         }
                         
-                        showToast(message, toastType);
+                        showToast(message, toastType, 10000); // Show longer for results
                     } else {
                         showToast('Error saving frames: ' + (data.error || 'Unknown error'), 'error');
                     }
@@ -2168,11 +2215,11 @@ def save_frames():
         return jsonify({'success': False, 'error': 'Video not found'})
     
     video_info = session['videos'][video_id]
-    video_name = os.path.splitext(video_info['name'])[0]
+    video_name_raw = os.path.splitext(video_info['name'])[0]
     
     # Create output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = os.path.join(OUTPUT_FOLDER, f'{video_name}_{timestamp}')
+    output_dir = os.path.join(OUTPUT_FOLDER, f'{video_name_raw}_{timestamp}')
     os.makedirs(output_dir, exist_ok=True)
     
     roboflow_results = []
@@ -2192,13 +2239,17 @@ def save_frames():
             # Use just the frame name without video name prefix for cleaner organization
             image_name = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.jpg'
             
-            # Add batch name metadata using the video name
+            # Determine batch name: custom if provided, otherwise default to video name
+            batch_name = roboflow_config.get('batchName') if roboflow_config.get('batchName') else video_name_raw
+            split = roboflow_config.get('split', 'train')
+
             success, message = upload_to_roboflow_api(
                 roboflow_config['apiKey'],
                 roboflow_config['url'],
                 frame_data['data'],
                 image_name,
-                batch_name=video_name  # Add batch name parameter
+                split=split,
+                batch_name=batch_name
             )
             roboflow_results.append({
                 'frame': i,
