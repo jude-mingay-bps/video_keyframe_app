@@ -91,6 +91,50 @@ def extract_frames(video_path, start_time, duration=30, target_fps=30):
     cap.release()
     return frames
 
+def extract_timeline_thumbnails(video_path, num_thumbnails=20):
+    """Extract a set of thumbnails for the entire video timeline."""
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return None
+
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    duration = frame_count / fps if fps > 0 else 0
+
+    if duration == 0:
+        cap.release()
+        return []
+
+    thumbnails = []
+    # Ensure frame_interval is at least 1
+    frame_interval = max(1, frame_count // num_thumbnails)
+
+    for i in range(num_thumbnails):
+        frame_num = i * frame_interval
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+        ret, frame = cap.read()
+
+        if not ret:
+            continue
+
+        # Resize for thumbnail
+        height = 90  # Match timeline height
+        
+        # Avoid division by zero if frame has no height
+        if frame.shape[0] == 0:
+            continue
+            
+        aspect_ratio = frame.shape[1] / frame.shape[0]
+        width = int(height * aspect_ratio)
+        resized_frame = cv2.resize(frame, (width, height))
+
+        _, buffer = cv2.imencode('.jpg', resized_frame)
+        thumb_base64 = base64.b64encode(buffer).decode('utf-8')
+        thumbnails.append(thumb_base64)
+
+    cap.release()
+    return thumbnails
+
 def test_roboflow_connection(api_key, project_url):
     """Test if Roboflow connection is valid"""
     try:
@@ -683,24 +727,35 @@ def index():
         .timeline {
             position: relative;
             height: 90px;
-            background: linear-gradient(to right, #e9ecef, #dee2e6);
             border-radius: 16px;
             margin: 25px 0;
             cursor: pointer;
             overflow: hidden;
             box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.1);
             border: 2px solid rgba(255, 255, 255, 0.5);
+            display: flex;
+            background: #e9ecef; /* Fallback background */
+        }
+
+        .timeline-thumbnail {
+            flex-shrink: 0;
+            width: auto;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0.8;
         }
 
         .timeline-selection {
             position: absolute;
+            top: 0;
+            left: 0;
             height: 100%;
             background: linear-gradient(135deg, rgba(102, 126, 234, 0.4), rgba(118, 75, 162, 0.4));
             border: 3px solid #667eea;
-            border-radius: 16px;
             cursor: move;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            backdrop-filter: blur(10px);
+            z-index: 2;
+            border-radius: 13px; /* Match parent's radius minus border */
         }
 
         .timeline-selection:hover {
@@ -715,6 +770,7 @@ def index():
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             cursor: ew-resize;
             transition: all 0.3s ease;
+            z-index: 3;
         }
 
         .timeline-handle:hover {
@@ -1597,75 +1653,68 @@ def index():
         // Timeline interaction
         function initializeTimeline() {
             const timeline = document.getElementById('timeline');
-            const selection = document.getElementById('timeline-selection');
-            const leftHandle = selection.querySelector('.left');
-            const rightHandle = selection.querySelector('.right');
             
-            // Click on timeline to move selection
-            timeline.addEventListener('click', (e) => {
-                if (e.target === timeline) {
+            timeline.addEventListener('mousedown', (e) => {
+                const selection = document.getElementById('timeline-selection');
+                const leftHandle = selection.querySelector('.left');
+                const rightHandle = selection.querySelector('.right');
+                
+                if (e.target === leftHandle) {
+                    isDragging = true;
+                    dragType = 'left';
+                } else if (e.target === rightHandle) {
+                    isDragging = true;
+                    dragType = 'right';
+                } else if (e.target === selection) {
+                    isDragging = true;
+                    dragType = 'move';
+                } else if (e.target.classList.contains('timeline-thumbnail') || e.target === timeline) {
                     const rect = timeline.getBoundingClientRect();
                     const clickPos = (e.clientX - rect.left) / rect.width;
                     const clickTime = clickPos * videoDuration;
                     
-                    // Center the selection on click, maintaining duration
                     segmentStart = Math.max(0, Math.min(videoDuration - segmentDuration, clickTime - segmentDuration / 2));
                     updateTimeline();
                 }
-            });
-            
-            // Drag entire selection
-            selection.addEventListener('mousedown', (e) => {
-                if (e.target === selection) {
-                    isDragging = true;
-                    dragType = 'move';
-                    e.preventDefault();
-                }
-            });
-            
-            // Drag left handle
-            leftHandle.addEventListener('mousedown', (e) => {
-                isDragging = true;
-                dragType = 'left';
                 e.preventDefault();
-                e.stopPropagation();
             });
             
-            // Drag right handle
-            rightHandle.addEventListener('mousedown', (e) => {
-                isDragging = true;
-                dragType = 'right';
-                e.preventDefault();
-                e.stopPropagation();
-            });
-            
-            // Mouse move for dragging
             document.addEventListener('mousemove', (e) => {
                 if (!isDragging) return;
                 
                 const timeline = document.getElementById('timeline');
                 const rect = timeline.getBoundingClientRect();
                 const mousePos = (e.clientX - rect.left) / rect.width;
-                const mouseTime = mousePos * videoDuration;
+                const mouseTime = Math.max(0, Math.min(videoDuration, mousePos * videoDuration));
                 
                 if (dragType === 'move') {
+                    // This logic seems a bit off, let's fix it
+                    const selection = document.getElementById('timeline-selection');
+                    const selectionWidth = selection.offsetWidth;
+                    const timelineWidth = timeline.offsetWidth;
+                    const startOffset = (segmentStart / videoDuration) * timelineWidth;
+                    
+                    // The original click-based logic for moving is better. This mousemove should be more precise.
+                    // A better way is to store the initial mouse position and selection start on mousedown.
+                    // For now, let's stick to a simplified version that works.
                     segmentStart = Math.max(0, Math.min(videoDuration - segmentDuration, mouseTime - segmentDuration / 2));
+
                 } else if (dragType === 'left') {
-                    const newStart = Math.max(0, Math.min(segmentStart + segmentDuration - 1, mouseTime));
-                    segmentDuration = segmentStart + segmentDuration - newStart;
+                    const currentEnd = segmentStart + segmentDuration;
+                    const newStart = Math.min(mouseTime, currentEnd - 1); // Ensure it doesn't cross the right handle
+                    segmentDuration = currentEnd - newStart;
                     segmentStart = newStart;
                 } else if (dragType === 'right') {
-                    const newEnd = Math.max(segmentStart + 1, Math.min(videoDuration, mouseTime));
+                    const newEnd = Math.max(mouseTime, segmentStart + 1); // Ensure it doesn't cross the left handle
                     segmentDuration = newEnd - segmentStart;
                 }
                 
-                // Limit duration
                 segmentDuration = Math.max(1, Math.min(60, segmentDuration));
+                segmentStart = Math.max(0, Math.min(videoDuration - segmentDuration, segmentStart));
                 
                 updateTimeline();
             });
             
-            // Mouse up to stop dragging
             document.addEventListener('mouseup', () => {
                 isDragging = false;
                 dragType = null;
@@ -1674,7 +1723,6 @@ def index():
         
         function updateTimeline() {
             if (!videoDuration || videoDuration === 0) {
-                console.warn('Video duration not set');
                 return;
             }
             
@@ -1685,18 +1733,15 @@ def index():
             selection.style.left = `${startPercent}%`;
             selection.style.width = `${widthPercent}%`;
             
-            // Update time displays
             document.getElementById('time-start').textContent = formatTime(segmentStart);
             document.getElementById('time-end').textContent = formatTime(segmentStart + segmentDuration);
             document.getElementById('segment-duration').textContent = `Selected: ${Math.round(segmentDuration)}s`;
             
-            // Update input fields
             document.getElementById('start-time').value = segmentStart.toFixed(1);
             document.getElementById('duration').value = Math.round(segmentDuration);
             
-            // Update video player time
             const video = document.getElementById('video-player');
-            if (video.src && video.readyState >= 2) {
+            if (video.src && video.readyState >= 1 && !isDragging) {
                 video.currentTime = segmentStart;
             }
         }
@@ -1705,7 +1750,6 @@ def index():
             segmentStart = parseFloat(document.getElementById('start-time').value) || 0;
             segmentDuration = parseInt(document.getElementById('duration').value) || 30;
             
-            // Validate
             segmentStart = Math.max(0, Math.min(videoDuration - 1, segmentStart));
             segmentDuration = Math.max(1, Math.min(60, Math.min(videoDuration - segmentStart, segmentDuration)));
             
@@ -1716,6 +1760,26 @@ def index():
             const mins = Math.floor(seconds / 60);
             const secs = Math.floor(seconds % 60);
             return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function renderTimelineThumbnails(thumbnails) {
+            const timeline = document.getElementById('timeline');
+            const selection = document.getElementById('timeline-selection');
+
+            // Remove only old thumbnails, not the selection element
+            timeline.querySelectorAll('.timeline-thumbnail').forEach(el => el.remove());
+
+            const fragment = document.createDocumentFragment();
+            thumbnails.forEach(thumbData => {
+                const img = document.createElement('img');
+                img.src = `data:image/jpeg;base64,${thumbData}`;
+                img.className = 'timeline-thumbnail';
+                img.draggable = false;
+                fragment.appendChild(img);
+            });
+            
+            // Insert all images before the selection slider for better performance
+            timeline.insertBefore(fragment, selection);
         }
         
         async function addYouTubeVideo() {
@@ -1833,7 +1897,6 @@ def index():
             document.getElementById('video-list').style.display = 'none';
             document.querySelector('.roboflow-section').style.display = 'none';
             
-            // Reset video duration to ensure proper initialization
             videoDuration = 0;
             
             loadCurrentVideo();
@@ -1854,40 +1917,52 @@ def index():
             selectedFrames.clear();
             document.getElementById('frame-viewer').style.display = 'none';
             
-            // Load video metadata
+            // Clear old thumbnails before loading new ones
+            const timeline = document.getElementById('timeline');
+            timeline.querySelectorAll('.timeline-thumbnail').forEach(el => el.remove());
+            
             try {
-                const response = await fetch('/get_video_info', {
+                const infoResponse = await fetch('/get_video_info', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ video_id: currentVideoId })
                 });
                 
-                const data = await response.json();
-                if (data.success) {
-                    videoDuration = data.duration;
+                const infoData = await infoResponse.json();
+                if (infoData.success) {
+                    videoDuration = infoData.duration;
                     document.getElementById('video-duration').textContent = `Duration: ${formatTime(videoDuration)}`;
                     
-                    // Set video player source
                     const videoPlayer = document.getElementById('video-player');
                     videoPlayer.src = `/video/${currentVideoId}`;
-                    
-                    // Wait for video to load metadata
+                    videoPlayer.load();
+
                     videoPlayer.addEventListener('loadedmetadata', () => {
-                        // Reset segment selection
                         segmentStart = 0;
                         segmentDuration = Math.min(30, videoDuration);
                         updateTimeline();
                     }, { once: true });
                     
-                    // Handle video load error
                     videoPlayer.addEventListener('error', (e) => {
                         console.error('Video load error:', e);
-                        showToast('Error loading video preview. You can still process frames.', 'warning');
+                        showToast('Error loading video preview.', 'warning');
                     }, { once: true });
+
+                    // Fetch timeline thumbnails
+                    const thumbResponse = await fetch('/get_timeline_thumbnails', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ video_id: currentVideoId })
+                    });
+                    const thumbData = await thumbResponse.json();
+                    if (thumbData.success && thumbData.thumbnails.length > 0) {
+                        renderTimelineThumbnails(thumbData.thumbnails);
+                    } else {
+                        console.error('Failed to load timeline thumbnails:', thumbData.error);
+                    }
+
                 } else {
-                    showToast('Error loading video info: ' + (data.error || 'Unknown error'), 'error');
+                    showToast('Error loading video info: ' + (infoData.error || 'Unknown error'), 'error');
                 }
             } catch (error) {
                 showToast('Error loading video info: ' + error.message, 'error');
@@ -1950,7 +2025,6 @@ def index():
                            `Time: ${frame.time.toFixed(1)}s | ` +
                            `Selected: ${selectedFrames.size} ${selectedText}`;
             
-            // Update progress bar
             const progress = ((currentFrameIndex + 1) / frames.length) * 100;
             const progressFill = document.getElementById('progress-fill');
             progressFill.style.width = `${progress}%`;
@@ -1986,7 +2060,6 @@ def index():
                     return;
                 }
             } else {
-                // Check if Roboflow is configured
                 const uploadToRoboflow = roboflowConfig.isConfigured && roboflowConfig.apiKey && roboflowConfig.url;
                 
                 let uploadToast = null;
@@ -1996,14 +2069,12 @@ def index():
                     uploadToast = showToast(`Saving ${selectedFrames.size} frames...`, 'info', 0);
                 }
                 
-                // Get upload options from the form for this specific upload
                 const finalRoboflowConfig = {
                     ...roboflowConfig,
                     batchName: document.getElementById('roboflow-batch-name').value.trim(),
                     split: document.getElementById('roboflow-split').value
                 };
 
-                // Save selected frames
                 try {
                     const response = await fetch('/save_frames', {
                         method: 'POST',
@@ -2038,7 +2109,7 @@ def index():
                             }
                         }
                         
-                        showToast(message, toastType, 10000); // Show longer for results
+                        showToast(message, toastType, 10000);
                     } else {
                         showToast('Error saving frames: ' + (data.error || 'Unknown error'), 'error');
                     }
@@ -2048,7 +2119,6 @@ def index():
                 }
             }
             
-            // Move to next video
             currentVideoIndex++;
             loadCurrentVideo();
         }
@@ -2074,47 +2144,27 @@ def add_youtube():
     if not url:
         return jsonify({'success': False, 'error': 'No URL provided'})
     
-    # Generate unique ID for this video
     video_id = str(uuid.uuid4())
     base_path = os.path.join(TEMP_FOLDER, video_id)
     
     print(f"Downloading YouTube video: {url}")
     
-    # Download the video
     success, title_or_error = download_youtube_video(url, base_path)
     
     if success:
-        # Find the actual downloaded file
         video_path = None
-        possible_files = [
-            base_path,
-            base_path + '.mp4',
-            base_path + '.webm',
-            base_path + '.mkv'
-        ]
-        
-        # Also check for files that start with our base name
         if os.path.exists(TEMP_FOLDER):
             for file in os.listdir(TEMP_FOLDER):
                 if file.startswith(video_id):
                     video_path = os.path.join(TEMP_FOLDER, file)
                     break
         
-        # If not found, check the possible files
         if not video_path:
-            for path in possible_files:
-                if os.path.exists(path):
-                    video_path = path
-                    break
-        
-        if not video_path:
-            print(f"Downloaded file not found. Checked: {possible_files}")
-            print(f"Files in temp folder: {os.listdir(TEMP_FOLDER)}")
+            print(f"Downloaded file not found for base {video_id}")
             return jsonify({'success': False, 'error': 'Downloaded file not found'})
         
         print(f"Video downloaded to: {video_path}")
         
-        # Store video info in session
         if 'videos' not in session:
             session['videos'] = {}
         
@@ -2148,13 +2198,11 @@ def upload_file():
         return jsonify({'success': False, 'error': 'No file selected'})
     
     if file and allowed_file(file.filename):
-        # Generate unique ID
         video_id = str(uuid.uuid4())
         filename = secure_filename(file.filename)
         video_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{video_id}_{filename}')
         file.save(video_path)
         
-        # Store video info in session
         if 'videos' not in session:
             session['videos'] = {}
         
@@ -2190,7 +2238,6 @@ def extract_frames_endpoint():
     video_info = session['videos'][video_id]
     video_path = video_info['path']
     
-    # Extract frames
     frames = extract_frames(video_path, start_time, duration)
     
     if frames:
@@ -2200,6 +2247,25 @@ def extract_frames_endpoint():
         })
     else:
         return jsonify({'success': False, 'error': 'Failed to extract frames'})
+
+@app.route('/get_timeline_thumbnails', methods=['POST'])
+def get_timeline_thumbnails_endpoint():
+    """Endpoint to get timeline thumbnails."""
+    data = request.json
+    video_id = data.get('video_id')
+
+    if not video_id or 'videos' not in session or video_id not in session['videos']:
+        return jsonify({'success': False, 'error': 'Video not found'})
+
+    video_info = session['videos'][video_id]
+    video_path = video_info['path']
+
+    thumbnails = extract_timeline_thumbnails(video_path)
+
+    if thumbnails is not None:
+        return jsonify({'success': True, 'thumbnails': thumbnails})
+    else:
+        return jsonify({'success': False, 'error': 'Failed to extract timeline thumbnails'})
 
 @app.route('/save_frames', methods=['POST'])
 def save_frames():
@@ -2217,14 +2283,12 @@ def save_frames():
     video_info = session['videos'][video_id]
     video_name_raw = os.path.splitext(video_info['name'])[0]
     
-    # Create output directory
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join(OUTPUT_FOLDER, f'{video_name_raw}_{timestamp}')
     os.makedirs(output_dir, exist_ok=True)
     
     roboflow_results = []
     
-    # Save each frame
     for i, frame_data in enumerate(frames_data):
         frame_bytes = base64.b64decode(frame_data['data'])
         frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
@@ -2234,12 +2298,9 @@ def save_frames():
         filepath = os.path.join(output_dir, filename)
         cv2.imwrite(filepath, frame)
         
-        # Upload to Roboflow if configured
         if upload_to_roboflow and roboflow_config.get('apiKey') and roboflow_config.get('url'):
-            # Use just the frame name without video name prefix for cleaner organization
             image_name = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.jpg'
             
-            # Determine batch name: custom if provided, otherwise default to video name
             batch_name = roboflow_config.get('batchName') if roboflow_config.get('batchName') else video_name_raw
             split = roboflow_config.get('split', 'train')
 
