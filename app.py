@@ -1441,6 +1441,10 @@ def index():
     </div>
     
     <script>
+
+        
+        let dragStartX = 0; // <-- ADD THIS
+        let initialSegmentStart = 0; // <-- ADD THIS
         let videos = [];
         let currentVideoIndex = 0;
         let frames = [];
@@ -1655,6 +1659,9 @@ def index():
             const timeline = document.getElementById('timeline');
             
             timeline.addEventListener('mousedown', (e) => {
+                // Prevent default text selection behavior
+                e.preventDefault();
+
                 const selection = document.getElementById('timeline-selection');
                 const leftHandle = selection.querySelector('.left');
                 const rightHandle = selection.querySelector('.right');
@@ -1668,6 +1675,10 @@ def index():
                 } else if (e.target === selection) {
                     isDragging = true;
                     dragType = 'move';
+                    // --- CAPTURE INITIAL STATE FOR DRAGGING ---
+                    dragStartX = e.clientX;
+                    initialSegmentStart = segmentStart;
+                    // ------------------------------------------
                 } else if (e.target.classList.contains('timeline-thumbnail') || e.target === timeline) {
                     const rect = timeline.getBoundingClientRect();
                     const clickPos = (e.clientX - rect.left) / rect.width;
@@ -1676,7 +1687,6 @@ def index():
                     segmentStart = Math.max(0, Math.min(videoDuration - segmentDuration, clickTime - segmentDuration / 2));
                     updateTimeline();
                 }
-                e.preventDefault();
             });
             
             document.addEventListener('mousemove', (e) => {
@@ -1684,31 +1694,33 @@ def index():
                 
                 const timeline = document.getElementById('timeline');
                 const rect = timeline.getBoundingClientRect();
-                const mousePos = (e.clientX - rect.left) / rect.width;
-                const mouseTime = Math.max(0, Math.min(videoDuration, mousePos * videoDuration));
                 
                 if (dragType === 'move') {
-                    // This logic seems a bit off, let's fix it
-                    const selection = document.getElementById('timeline-selection');
-                    const selectionWidth = selection.offsetWidth;
-                    const timelineWidth = timeline.offsetWidth;
-                    const startOffset = (segmentStart / videoDuration) * timelineWidth;
+                    // --- NEW, SMOOTH DRAG LOGIC ---
+                    const mouseDeltaX = e.clientX - dragStartX;
+                    const timeDelta = (mouseDeltaX / timeline.offsetWidth) * videoDuration;
+                    const newStart = initialSegmentStart + timeDelta;
                     
-                    // The original click-based logic for moving is better. This mousemove should be more precise.
-                    // A better way is to store the initial mouse position and selection start on mousedown.
-                    // For now, let's stick to a simplified version that works.
-                    segmentStart = Math.max(0, Math.min(videoDuration - segmentDuration, mouseTime - segmentDuration / 2));
+                    // Clamp the new start time to stay within video bounds
+                    segmentStart = Math.max(0, Math.min(videoDuration - segmentDuration, newStart));
+                    // -----------------------------
+                } else {
+                    // This logic is for the handles and can remain the same
+                    const mousePos = (e.clientX - rect.left) / rect.width;
+                    const mouseTime = Math.max(0, Math.min(videoDuration, mousePos * videoDuration));
 
-                } else if (dragType === 'left') {
-                    const currentEnd = segmentStart + segmentDuration;
-                    const newStart = Math.min(mouseTime, currentEnd - 1); // Ensure it doesn't cross the right handle
-                    segmentDuration = currentEnd - newStart;
-                    segmentStart = newStart;
-                } else if (dragType === 'right') {
-                    const newEnd = Math.max(mouseTime, segmentStart + 1); // Ensure it doesn't cross the left handle
-                    segmentDuration = newEnd - segmentStart;
+                    if (dragType === 'left') {
+                        const currentEnd = segmentStart + segmentDuration;
+                        const newStart = Math.min(mouseTime, currentEnd - 1);
+                        segmentDuration = currentEnd - newStart;
+                        segmentStart = newStart;
+                    } else if (dragType === 'right') {
+                        const newEnd = Math.max(mouseTime, segmentStart + 1);
+                        segmentDuration = newEnd - segmentStart;
+                    }
                 }
                 
+                // Common constraints for all drag types
                 segmentDuration = Math.max(1, Math.min(60, segmentDuration));
                 segmentStart = Math.max(0, Math.min(videoDuration - segmentDuration, segmentStart));
                 
@@ -1716,8 +1728,12 @@ def index():
             });
             
             document.addEventListener('mouseup', () => {
-                isDragging = false;
-                dragType = null;
+                if (isDragging) {
+                    isDragging = false;
+                    dragType = null;
+                    // This call ensures the video player syncs to the final position after dragging
+                    updateTimeline();
+                }
             });
         }
         
@@ -2068,7 +2084,7 @@ def index():
                 } else {
                     uploadToast = showToast(`Saving ${selectedFrames.size} frames...`, 'info', 0);
                 }
-                
+
                 const finalRoboflowConfig = {
                     ...roboflowConfig,
                     batchName: document.getElementById('roboflow-batch-name').value.trim(),
@@ -2292,7 +2308,7 @@ def save_frames():
     for i, frame_data in enumerate(frames_data):
         frame_bytes = base64.b64decode(frame_data['data'])
         frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
-        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR);
         
         filename = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.png'
         filepath = os.path.join(output_dir, filename)
