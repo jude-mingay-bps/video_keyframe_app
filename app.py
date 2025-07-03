@@ -15,6 +15,8 @@ from PIL import Image
 import numpy as np
 import requests
 from moviepy import VideoFileClip
+import glob
+from ultralytics import YOLO
 
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-here'  # Change this in production
@@ -24,84 +26,232 @@ CORS(app)
 UPLOAD_FOLDER = 'uploads'
 OUTPUT_FOLDER = 'output'
 TEMP_FOLDER = 'temp'
+MODELS_FOLDER = 'models'
 ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'webm'}
 
 # Create necessary directories
-for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER, TEMP_FOLDER]:
+for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER, TEMP_FOLDER, MODELS_FOLDER]:
     os.makedirs(folder, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size
+
+# Global variable to store loaded model
+loaded_model = None
+model_info = None
+
+def load_yolo_model():
+    """Load the first available YOLO model from the models folder"""
+    global loaded_model, model_info
+    
+    if loaded_model is not None:
+        return loaded_model, model_info
+    
+    # Look for YOLO model files
+    model_extensions = ['*.pt', '*.onnx', '*.engine']
+    model_files = []
+    
+    for ext in model_extensions:
+        model_files.extend(glob.glob(os.path.join(MODELS_FOLDER, ext)))
+    
+    if not model_files:
+        print("No YOLO model found in models folder")
+        return None, None
+    
+    # Use the first found model
+    model_path = model_files[0]
+    
+    try:
+        print(f"Loading YOLO model from: {model_path}")
+        loaded_model = YOLO(model_path)
+        
+        # Get model info
+        model_info = {
+            'path': model_path,
+            'name': os.path.basename(model_path),
+            'classes': loaded_model.names if hasattr(loaded_model, 'names') else {},
+            'num_classes': len(loaded_model.names) if hasattr(loaded_model, 'names') else 0
+        }
+        
+        print(f"Model loaded successfully: {model_info['name']}")
+        print(f"Classes: {list(model_info['classes'].values())}")
+        
+        return loaded_model, model_info
+        
+    except Exception as e:
+        print(f"Error loading YOLO model: {e}")
+        return None, None
+
+def predict_on_frame(frame_base64, confidence_threshold=0.25):
+    """Run YOLO prediction on a frame"""
+    model, info = load_yolo_model()
+    
+    if model is None:
+        return None, "No YOLO model available"
+    
+    try:
+        # Decode base64 image
+        image_bytes = base64.b64decode(frame_base64)
+        image_array = np.frombuffer(image_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            return None, "Failed to decode image"
+        
+        # Run inference
+        results = model(frame, conf=confidence_threshold)
+        
+        if not results or len(results) == 0:
+            return [], "No detections"
+        
+        result = results[0]
+        
+        # Convert to annotations format
+        annotations = []
+        
+        if result.boxes is not None and len(result.boxes) > 0:
+            for box in result.boxes:
+                # Get box coordinates (xyxy format)
+                x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                confidence = float(box.conf[0].cpu().numpy())
+                class_id = int(box.cls[0].cpu().numpy())
+                
+                # Convert to relative coordinates for YOLO format
+                img_height, img_width = frame.shape[:2]
+                x_center = (x1 + x2) / 2 / img_width
+                y_center = (y1 + y2) / 2 / img_height
+                width = (x2 - x1) / img_width
+                height = (y2 - y1) / img_height
+                
+                class_name = info['classes'].get(class_id, f'class_{class_id}')
+                
+                annotations.append({
+                    'class_id': class_id,
+                    'class_name': class_name,
+                    'confidence': confidence,
+                    'bbox_xyxy': [float(x1), float(y1), float(x2), float(y2)],
+                    'bbox_yolo': [float(x_center), float(y_center), float(width), float(height)]
+                })
+        
+        return annotations, "Success"
+        
+    except Exception as e:
+        print(f"Prediction error: {e}")
+        return None, f"Prediction error: {str(e)}"
+
+def draw_annotations_on_frame(frame_base64, annotations):
+    """Draw bounding boxes and labels on frame"""
+    try:
+        # Decode image
+        image_bytes = base64.b64decode(frame_base64)
+        image_array = np.frombuffer(image_bytes, dtype=np.uint8)
+        frame = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            return None
+        
+        # Draw annotations
+        for ann in annotations:
+            x1, y1, x2, y2 = [int(coord) for coord in ann['bbox_xyxy']]
+            confidence = ann['confidence']
+            class_name = ann['class_name']
+            
+            # Choose color based on class_id
+            colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), 
+                     (255, 0, 255), (0, 255, 255), (128, 0, 128), (255, 165, 0)]
+            color = colors[ann['class_id'] % len(colors)]
+            
+            # Draw bounding box
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            
+            # Draw label
+            label = f"{class_name}: {confidence:.2f}"
+            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+            
+            # Draw label background
+            cv2.rectangle(frame, (x1, y1 - label_size[1] - 10), 
+                         (x1 + label_size[0], y1), color, -1)
+            
+            # Draw label text
+            cv2.putText(frame, label, (x1, y1 - 5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+        
+        # Encode back to base64
+        _, buffer = cv2.imencode('.jpg', frame)
+        annotated_base64 = base64.b64encode(buffer).decode('utf-8')
+        
+        return annotated_base64
+        
+    except Exception as e:
+        print(f"Error drawing annotations: {e}")
+        return None
+
+def create_yolo_annotation_file(annotations, image_width, image_height):
+    """Create YOLO format annotation text"""
+    lines = []
+    for ann in annotations:
+        class_id = ann['class_id']
+        x_center, y_center, width, height = ann['bbox_yolo']
+        lines.append(f"{class_id} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}")
+    
+    return '\n'.join(lines)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def download_youtube_video(url, output_path):
     """Download YouTube video using yt-dlp"""
-    # Ensure output path doesn't have extension (yt-dlp will add it)
     if output_path.endswith('.mp4'):
         output_path = output_path[:-4]
     
     ydl_opts = {
         'format': 'best[ext=mp4]/best',
         'outtmpl': output_path + '.%(ext)s',
-        'quiet': False,  # Show progress for debugging
+        'quiet': False,
         'no_warnings': False,
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            # Get the actual filename (yt-dlp might add extension)
             return True, info.get('title', 'YouTube Video')
     except Exception as e:
         print(f"Error downloading YouTube video: {e}")
         return False, str(e)
 
-
-
 def extract_frames(video_path, start_time, duration=30, target_fps=30):
     """Extract frames from video at specified fps using moviepy."""
     try:
-        # Use moviepy to open the video file
-        video = VideoFileClip(video_path)
-        
-        # Calculate end time ensuring it doesn't exceed video duration
-        end_time = min(start_time + duration, video.duration)
-        
-        frames = []
-        current_time = start_time
-        frame_interval = 1.0 / target_fps
-        
-        while current_time < end_time:
-            # Get the frame at the current time
-            frame_array = video.get_frame(current_time)
+        with VideoFileClip(video_path) as video:
+            end_time = min(start_time + duration, video.duration)
             
-            # moviepy provides frames in RGB, OpenCV needs BGR
-            frame_bgr = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
+            frames = []
+            current_time = start_time
+            frame_interval = 1.0 / target_fps
             
-            # Convert frame to base64 for web display
-            _, buffer = cv2.imencode('.jpg', frame_bgr)
-            frame_base64 = base64.b64encode(buffer).decode('utf-8')
+            while current_time < end_time:
+                frame_array = video.get_frame(current_time)
+                frame_bgr = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
+                
+                _, buffer = cv2.imencode('.jpg', frame_bgr)
+                frame_base64 = base64.b64encode(buffer).decode('utf-8')
+                
+                frame_num = int(current_time * video.fps)
+                
+                frames.append({
+                    'data': frame_base64,
+                    'frame_num': frame_num,
+                    'time': current_time
+                })
+                
+                current_time += frame_interval
             
-            # Frame number is approximated here
-            frame_num = int(current_time * video.fps)
-            
-            frames.append({
-                'data': frame_base64,
-                'frame_num': frame_num,
-                'time': current_time
-            })
-            
-            current_time += frame_interval
-        
-        # Clean up
-        video.close()
         return frames
 
     except Exception as e:
         print(f"Error extracting frames with moviepy: {e}")
         return None
+
 
 def extract_timeline_thumbnails(video_path, num_thumbnails=20):
     """Extract a set of thumbnails for the entire video timeline."""
@@ -118,7 +268,6 @@ def extract_timeline_thumbnails(video_path, num_thumbnails=20):
         return []
 
     thumbnails = []
-    # Ensure frame_interval is at least 1
     frame_interval = max(1, frame_count // num_thumbnails)
 
     for i in range(num_thumbnails):
@@ -129,10 +278,7 @@ def extract_timeline_thumbnails(video_path, num_thumbnails=20):
         if not ret:
             continue
 
-        # Resize for thumbnail
-        height = 90  # Match timeline height
-        
-        # Avoid division by zero if frame has no height
+        height = 90
         if frame.shape[0] == 0:
             continue
             
@@ -150,7 +296,6 @@ def extract_timeline_thumbnails(video_path, num_thumbnails=20):
 def test_roboflow_connection(api_key, project_url):
     """Test if Roboflow connection is valid"""
     try:
-        # Extract workspace and project from URL
         project_url = project_url.rstrip('/')
         
         if 'roboflow.com' in project_url:
@@ -165,7 +310,6 @@ def test_roboflow_connection(api_key, project_url):
         else:
             return False, "Invalid Roboflow URL format"
         
-        # Test API endpoint - get project info
         test_url = f"https://api.roboflow.com/{workspace}/{project}"
         
         params = {
@@ -182,10 +326,9 @@ def test_roboflow_connection(api_key, project_url):
     except Exception as e:
         return False, f"Connection error: {str(e)}"
 
-def upload_to_roboflow_api(api_key, project_url, image_data, image_name, split='train', batch_name=None):
-    """Upload image to Roboflow project with optional batch name and split"""
+def upload_to_roboflow_api(api_key, project_url, image_data, image_name, split='train', batch_name=None, annotation_data=None):
+    """Upload image to Roboflow project with optional annotations"""
     try:
-        # Extract workspace and project from URL
         project_url = project_url.rstrip('/')
         
         if 'roboflow.com' in project_url:
@@ -200,78 +343,120 @@ def upload_to_roboflow_api(api_key, project_url, image_data, image_name, split='
         else:
             return False, "Invalid Roboflow URL format"
         
-        # Correct Roboflow Upload API endpoint format
         upload_url = f"https://api.roboflow.com/dataset/{project}/upload"
         
-        # Convert base64 to image file
         image_bytes = base64.b64decode(image_data)
         
-        # Save temporarily to ensure proper file upload
         import tempfile
         with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
             tmp_file.write(image_bytes)
             tmp_path = tmp_file.name
         
         try:
-            # Prepare the multipart upload
-            with open(tmp_path, 'rb') as f:
-                files = {
-                    'file': (image_name, f, 'image/jpeg')
-                }
+            files = {'file': (image_name, open(tmp_path, 'rb'), 'image/jpeg')}
+            
+            params = {
+                'api_key': api_key,
+                'name': image_name,
+                'split': split
+            }
+            
+            if batch_name:
+                params['batch'] = batch_name
+            
+            # Add annotation data if provided
+            if annotation_data:
+                annotation_name = image_name.rsplit('.', 1)[0] + '.txt'
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as ann_file:
+                    ann_file.write(annotation_data)
+                    ann_path = ann_file.name
                 
-                # Parameters as query string
-                params = {
-                    'api_key': api_key,
-                    'name': image_name,
-                    'split': split # Use the provided split
-                }
-                
-                # Add batch name if provided
-                if batch_name:
-                    params['batch'] = batch_name
-                
-                print(f"Uploading to: {upload_url}")
-                print(f"Project: {project}")
-                print(f"Image name: {image_name}")
-                print(f"Split: {split}")
-                if batch_name:
-                    print(f"Batch name: {batch_name}")
-                
-                response = requests.post(
-                    upload_url,
-                    files=files,
-                    params=params
-                )
-                
-                print(f"Response status: {response.status_code}")
-                print(f"Response text: {response.text[:200]}...")
-                
-                if response.status_code == 200:
-                    # Check if response indicates success
-                    try:
-                        result = response.json()
-                        if 'error' in result:
-                            return False, f"Upload error: {result['error']}"
-                        elif 'success' in result and result['success']:
-                            return True, "Image uploaded successfully"
-                        elif 'id' in result:  # Some endpoints return an ID on success
-                            return True, f"Image uploaded successfully (ID: {result['id']})"
-                        else:
-                            # If no error and status is 200, assume success
-                            return True, "Image uploaded successfully"
-                    except:
-                        # If can't parse JSON but got 200, assume success
+                files['annotation'] = (annotation_name, open(ann_path, 'rb'), 'text/plain')
+            
+            print(f"Uploading to: {upload_url}")
+            print(f"Project: {project}")
+            print(f"Image name: {image_name}")
+            print(f"Split: {split}")
+            if batch_name:
+                print(f"Batch name: {batch_name}")
+            if annotation_data:
+                print(f"With annotations: {annotation_name}")
+                print(f"Annotation content preview: {annotation_data[:100]}...")
+            
+            response = requests.post(upload_url, files=files, params=params)
+            
+            # Close files
+            for file_obj in files.values():
+                if hasattr(file_obj[1], 'close'):
+                    file_obj[1].close()
+            
+            print(f"Response status: {response.status_code}")
+            print(f"Response text: {response.text[:200]}...")
+            
+            if response.status_code == 200:
+                try:
+                    result = response.json()
+                    if 'error' in result:
+                        return False, f"Upload error: {result['error']}"
+                    elif 'success' in result and result['success']:
                         return True, "Image uploaded successfully"
-                else:
-                    return False, f"Failed to upload (Status {response.status_code}): {response.text}"
+                    elif 'id' in result:
+                        return True, f"Image uploaded successfully (ID: {result['id']})"
+                    else:
+                        return True, "Image uploaded successfully"
+                except:
+                    return True, "Image uploaded successfully"
+            else:
+                return False, f"Failed to upload (Status {response.status_code}): {response.text}"
+                
         finally:
-            # Clean up temp file
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+            if 'annotation_data' in locals() and annotation_data and 'ann_path' in locals() and os.path.exists(ann_path):
+                os.remove(ann_path)
                 
     except Exception as e:
         print(f"Exception during upload: {str(e)}")
         return False, f"Error uploading to Roboflow: {str(e)}"
+
+# Routes
+@app.route('/get_model_info')
+def get_model_info():
+    """Get information about the loaded YOLO model"""
+    model, info = load_yolo_model()
+    
+    if model is None:
+        return jsonify({'success': False, 'error': 'No YOLO model found in models folder'})
+    
+    return jsonify({
+        'success': True,
+        'model_info': info
+    })
+
+@app.route('/predict_frame', methods=['POST'])
+def predict_frame():
+    """Run YOLO prediction on a single frame and return annotated image"""
+    data = request.json
+    frame_data = data.get('frame_data')
+    confidence = data.get('confidence', 0.25)
+    
+    if not frame_data:
+        return jsonify({'success': False, 'error': 'No frame data provided'})
+    
+    annotations, message = predict_on_frame(frame_data, confidence)
+    
+    if annotations is None:
+        return jsonify({'success': False, 'error': message})
+    
+    # Draw annotations on frame
+    annotated_frame = draw_annotations_on_frame(frame_data, annotations)
+    
+    return jsonify({
+        'success': True,
+        'annotations': annotations,
+        'annotated_frame': annotated_frame,
+        'message': message
+    })
 
 @app.route('/test_roboflow', methods=['POST'])
 def test_roboflow_endpoint():
@@ -304,7 +489,6 @@ def get_video_info():
     print(f"Video path: {video_path}")
     
     if not os.path.exists(video_path):
-        # Try to find the file with different extensions
         possible_paths = [
             video_path,
             video_path + '.mp4',
@@ -320,7 +504,6 @@ def get_video_info():
         
         if found_path:
             video_path = found_path
-            # Update session with correct path
             session['videos'][video_id]['path'] = video_path
             session.modified = True
             print(f"Updated video path to: {video_path}")
@@ -328,7 +511,6 @@ def get_video_info():
             print(f"Video file not found. Tried paths: {possible_paths}")
             return jsonify({'success': False, 'error': f'Video file not found'})
     
-    # Get video duration
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"Cannot open video file: {video_path}")
@@ -341,7 +523,6 @@ def get_video_info():
     
     print(f"Video info - FPS: {fps}, Frames: {frame_count}, Duration: {duration}")
     
-    # Ensure duration is valid
     if duration <= 0:
         return jsonify({'success': False, 'error': 'Invalid video duration'})
     
@@ -377,14 +558,14 @@ def serve_video(video_id):
 
 @app.route('/')
 def index():
-    """Serve the main page"""
+    """Serve the main page with enhanced YOLO integration"""
     return '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Frame Selector with Roboflow Integration</title>
+    <title>Video Frame Selector with YOLO & Roboflow Integration</title>
     <style>
         * {
             box-sizing: border-box;
@@ -454,7 +635,7 @@ def index():
             font-weight: 500;
         }
 
-        .upload-section, .roboflow-section, .video-list, .frame-selector {
+        .upload-section, .roboflow-section, .yolo-section, .video-list, .frame-selector {
             background: rgba(255, 255, 255, 0.95);
             backdrop-filter: blur(15px);
             border: 1px solid rgba(255, 255, 255, 0.2);
@@ -475,6 +656,46 @@ def index():
                 opacity: 1;
                 transform: translateY(0);
             }
+        }
+
+        .yolo-section {
+            border: 2px solid transparent;
+            background: linear-gradient(white, white) padding-box,
+                        linear-gradient(135deg, #27ae60, #16a085) border-box;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .yolo-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #27ae60, #16a085, #27ae60);
+            background-size: 200% 100%;
+            animation: pulse-green 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { opacity: 0.7; }
+            50% { opacity: 1; }
+        }
+
+        .yolo-section h2 {
+            color: #27ae60;
+            margin-bottom: 25px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 1.5em;
+            font-weight: 700;
+        }
+
+        .yolo-section h2::before {
+            content: '🎯';
+            font-size: 1.2em;
         }
 
         .roboflow-section {
@@ -550,7 +771,7 @@ def index():
             border-radius: 1px;
         }
 
-        input[type="text"], input[type="file"], input[type="number"], input[type="password"], select {
+        input[type="text"], input[type="file"], input[type="number"], input[type="password"], input[type="range"], select {
             width: 100%;
             padding: 18px 20px;
             border: 2px solid #e8ecef;
@@ -572,12 +793,59 @@ def index():
              padding-right: 50px;
         }
 
-        input[type="text"]:focus, input[type="file"]:focus, input[type="number"]:focus, input[type="password"]:focus, select:focus {
+        input[type="text"]:focus, input[type="file"]:focus, input[type="number"]:focus, input[type="password"]:focus, input[type="range"]:focus, select:focus {
             outline: none;
             border-color: #667eea;
             background: white;
             box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1), 0 8px 25px rgba(102, 126, 234, 0.15);
             transform: translateY(-2px);
+        }
+
+        .range-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .range-container input[type="range"] {
+            flex: 1;
+            padding: 0;
+            height: 8px;
+            background: linear-gradient(135deg, #e8ecef, #bdc3c7);
+            border-radius: 4px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .range-container input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .range-container input[type="range"]::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .range-value {
+            min-width: 60px;
+            text-align: center;
+            font-weight: 700;
+            color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+            padding: 8px 12px;
+            border-radius: 8px;
         }
 
         .button-group {
@@ -645,6 +913,133 @@ def index():
 
         button.roboflow-btn:hover {
             box-shadow: 0 12px 35px 0 rgba(231, 76, 60, 0.4);
+        }
+
+        button.yolo-btn {
+            background: linear-gradient(135deg, #27ae60 0%, #16a085 100%);
+            box-shadow: 0 8px 25px 0 rgba(39, 174, 96, 0.3);
+        }
+
+        button.yolo-btn:hover {
+            box-shadow: 0 12px 35px 0 rgba(39, 174, 96, 0.4);
+        }
+
+        .model-info {
+            background: linear-gradient(135deg, rgba(39, 174, 96, 0.1), rgba(22, 160, 133, 0.1));
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+            border: 2px solid rgba(39, 174, 96, 0.2);
+        }
+
+        .model-info h4 {
+            color: #27ae60;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .class-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .class-tag {
+            background: linear-gradient(135deg, #27ae60, #16a085);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .prediction-toggle {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 60px;
+            height: 30px;
+            background: #bdc3c7;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .toggle-switch.active {
+            background: #27ae60;
+        }
+
+        .toggle-switch::before {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 24px;
+            height: 24px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.3s;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+        }
+
+        .toggle-switch.active::before {
+            transform: translateX(30px);
+        }
+
+        .toggle-label {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .annotation-info {
+            background: linear-gradient(135deg, rgba(39, 174, 96, 0.1), rgba(22, 160, 133, 0.1));
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin: 15px 0;
+            border: 2px solid rgba(39, 174, 96, 0.2);
+            display: none;
+        }
+
+        .annotation-info.active {
+            display: block;
+        }
+
+        .annotation-info h4 {
+            color: #27ae60;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .annotation-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .annotation-item {
+            background: linear-gradient(135deg, #27ae60, #16a085);
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .annotation-confidence {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 11px;
         }
 
         .video-list {
@@ -746,7 +1141,7 @@ def index():
             box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.1);
             border: 2px solid rgba(255, 255, 255, 0.5);
             display: flex;
-            background: #e9ecef; /* Fallback background */
+            background: #e9ecef;
         }
 
         .timeline-thumbnail {
@@ -765,9 +1160,8 @@ def index():
             background: linear-gradient(135deg, rgba(102, 126, 234, 0.4), rgba(118, 75, 162, 0.4));
             border: 3px solid #667eea;
             cursor: move;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             z-index: 2;
-            border-radius: 13px; /* Match parent's radius minus border */
+            border-radius: 13px;
         }
 
         .timeline-selection:hover {
@@ -863,6 +1257,7 @@ def index():
         .frame-display {
             text-align: center;
             margin: 35px 0;
+            position: relative;
         }
 
         .frame-display img {
@@ -878,6 +1273,16 @@ def index():
             border-color: #27ae60;
             box-shadow: 0 0 40px rgba(39, 174, 96, 0.5), 0 20px 60px rgba(0, 0, 0, 0.15);
             transform: scale(1.02);
+        }
+
+        .frame-display img.predicted {
+            border-color: #f39c12;
+            box-shadow: 0 0 40px rgba(243, 156, 18, 0.5), 0 20px 60px rgba(0, 0, 0, 0.15);
+        }
+
+        .frame-display img.selected.predicted {
+            border-color: #e67e22;
+            box-shadow: 0 0 40px rgba(230, 126, 34, 0.7), 0 20px 60px rgba(0, 0, 0, 0.2);
         }
 
         .frame-controls {
@@ -911,9 +1316,21 @@ def index():
             text-shadow: 0 0 10px rgba(39, 174, 96, 0.3);
         }
 
+        .predicted-indicator {
+            color: #f39c12;
+            font-weight: 900;
+            animation: glow 2s ease-in-out infinite;
+            text-shadow: 0 0 10px rgba(243, 156, 18, 0.3);
+        }
+
         @keyframes pulse {
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.7; transform: scale(1.05); }
+        }
+
+        @keyframes glow {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
         }
 
         .progress-bar {
@@ -1010,7 +1427,7 @@ def index():
             color: #555;
         }
 
-        .roboflow-status {
+        .roboflow-status, .yolo-status {
             display: inline-flex;
             align-items: center;
             padding: 8px 18px;
@@ -1022,7 +1439,7 @@ def index():
             gap: 8px;
         }
 
-        .roboflow-status::before {
+        .roboflow-status::before, .yolo-status::before {
             content: '';
             width: 8px;
             height: 8px;
@@ -1030,23 +1447,23 @@ def index():
             animation: status-pulse 2s ease-in-out infinite;
         }
 
-        .roboflow-status.connected {
+        .roboflow-status.connected, .yolo-status.connected {
             background: linear-gradient(135deg, #27ae60, #229954);
             color: white;
             box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
         }
 
-        .roboflow-status.connected::before {
+        .roboflow-status.connected::before, .yolo-status.connected::before {
             background: #fff;
         }
 
-        .roboflow-status.disconnected {
+        .roboflow-status.disconnected, .yolo-status.disconnected {
             background: linear-gradient(135deg, #e74c3c, #c0392b);
             color: white;
             box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
         }
 
-        .roboflow-status.disconnected::before {
+        .roboflow-status.disconnected::before, .yolo-status.disconnected::before {
             background: #fff;
         }
 
@@ -1115,13 +1532,13 @@ def index():
             background: linear-gradient(135deg, #f39c12, #e67e22);
         }
 
-        .toast.content {
+        .toast-content {
             display: flex;
             align-items: flex-start;
             gap: 12px;
         }
 
-        .toast.icon {
+        .toast-icon {
             flex-shrink: 0;
             width: 24px;
             height: 24px;
@@ -1134,27 +1551,27 @@ def index():
             margin-top: 2px;
         }
 
-        .toast.success .toast.icon {
+        .toast.success .toast-icon {
             background: linear-gradient(135deg, #27ae60, #229954);
             color: white;
         }
 
-        .toast.error .toast.icon {
+        .toast.error .toast-icon {
             background: linear-gradient(135deg, #e74c3c, #c0392b);
             color: white;
         }
 
-        .toast.warning .toast.icon {
+        .toast.warning .toast-icon {
             background: linear-gradient(135deg, #f39c12, #e67e22);
             color: white;
         }
 
-        .toast.info .toast.icon {
+        .toast.info .toast-icon {
             background: linear-gradient(135deg, #667eea, #764ba2);
             color: white;
         }
 
-        .toast.message {
+        .toast-message {
             flex: 1;
             font-size: 15px;
             font-weight: 600;
@@ -1162,7 +1579,7 @@ def index():
             line-height: 1.4;
         }
 
-        .toast.close {
+        .toast-close {
             flex-shrink: 0;
             background: none;
             border: none;
@@ -1180,7 +1597,7 @@ def index():
             margin-top: 2px;
         }
 
-        .toast.close:hover {
+        .toast-close:hover {
             background: rgba(149, 165, 166, 0.1);
             color: #7f8c8d;
         }
@@ -1203,7 +1620,7 @@ def index():
             width: 0%;
         }
 
-        .toast.progress .toast.message {
+        .toast.progress .toast-message {
             margin-bottom: 8px;
         }
 
@@ -1299,7 +1716,7 @@ def index():
                 font-size: 1.8em;
             }
             
-            .upload-section, .roboflow-section, .video-list, .frame-selector {
+            .upload-section, .roboflow-section, .yolo-section, .video-list, .frame-selector {
                 padding: 20px;
                 border-radius: 16px;
             }
@@ -1322,11 +1739,32 @@ def index():
     <div class="toast-container" id="toast-container"></div>
 
     <header>
-        <h1>Video Frame Selector with Roboflow Integration</h1>
-        <div class="subtitle">Extract and manage video frames with seamless Roboflow integration</div>
+        <h1>Video Frame Selector with YOLO & Roboflow Integration</h1>
+        <div class="subtitle">Extract frames, run YOLO predictions, and upload to Roboflow with annotations</div>
     </header>
     
     <div class="container">
+        <div class="yolo-section">
+            <h2>YOLO Model Configuration <span id="yolo-status" class="yolo-status disconnected">Loading...</span></h2>
+            
+            <div id="model-info-container">
+                </div>
+            
+            <div class="input-group">
+                <label for="confidence-threshold">Confidence Threshold:</label>
+                <div class="range-container">
+                    <input type="range" id="confidence-threshold" min="0.05" max="0.95" value="0.25" step="0.05">
+                    <span class="range-value" id="confidence-value">0.25</span>
+                </div>
+            </div>
+            
+            <div class="prediction-toggle">
+                <div class="toggle-switch" id="prediction-toggle" onclick="togglePredictionMode()">
+                </div>
+                <span class="toggle-label">Enable YOLO Predictions</span>
+            </div>
+        </div>
+        
         <div class="roboflow-section">
             <h2>Roboflow Configuration <span id="roboflow-status" class="roboflow-status disconnected">Not Connected</span></h2>
             
@@ -1387,7 +1825,7 @@ def index():
             <button onclick="startProcessing()" id="start-btn">Start Processing</button>
         </div>
         
-        <div class="frame-selector" id="frame-selector">
+        <div class="frame-selector" style="display: none;">
             <h2 id="current-video-title">Processing Video</h2>
             
             <div class="video-preview">
@@ -1428,10 +1866,17 @@ def index():
                 <div class="instructions">
                     Use <span class="keyboard-hint">←</span> <span class="keyboard-hint">→</span> to navigate, 
                     <span class="keyboard-hint">Space</span> to select/deselect, 
+                    <span class="keyboard-hint">P</span> to predict (if YOLO enabled),
                     <span class="keyboard-hint">Enter</span> to finish
                 </div>
                 
                 <div class="frame-info" id="frame-info"></div>
+                
+                <div class="annotation-info" id="annotation-info">
+                    <h4>YOLO Predictions</h4>
+                    <div class="annotation-list" id="annotation-list">
+                        </div>
+                </div>
                 
                 <div class="frame-display">
                     <img id="frame-image" src="" alt="Video frame">
@@ -1440,6 +1885,7 @@ def index():
                 <div class="frame-controls">
                     <button onclick="previousFrame()">← Previous</button>
                     <button onclick="toggleSelection()">Toggle Selection</button>
+                    <button onclick="runPrediction()" class="yolo-btn" id="predict-btn">Run Prediction</button>
                     <button onclick="nextFrame()">Next →</button>
                 </div>
                 
@@ -1448,26 +1894,28 @@ def index():
                 </div>
                 
                 <button onclick="finishVideo()" style="width: 100%; margin-top: 20px;">Finish This Video</button>
+                <button onclick="showMainMenu()" style="width: 100%; margin-top: 10px; background: linear-gradient(135deg, #95a5a6, #7f8c8d);">Back to Video List</button>
             </div>
         </div>
     </div>
     
     <script>
-
-        
-        let dragStartX = 0; // <-- ADD THIS
-        let initialSegmentStart = 0; // <-- ADD THIS
+        let dragStartX = 0;
+        let initialSegmentStart = 0;
         let videos = [];
         let currentVideoIndex = 0;
         let frames = [];
         let currentFrameIndex = 0;
         let selectedFrames = new Set();
+        let framePredictions = new Map(); // Store predictions for each frame
         let currentVideoId = null;
         let videoDuration = 0;
         let segmentStart = 0;
         let segmentDuration = 30;
         let isDragging = false;
         let dragType = null;
+        let predictionMode = false; // Whether YOLO predictions are enabled
+        let modelInfo = null;
         let roboflowConfig = {
             url: '',
             apiKey: '',
@@ -1475,6 +1923,11 @@ def index():
             split: 'train',
             isConfigured: false
         };
+        
+        // Initialize confidence threshold slider
+        document.getElementById('confidence-threshold').addEventListener('input', (e) => {
+            document.getElementById('confidence-value').textContent = e.target.value;
+        });
         
         // Toast Notification System
         function showToast(message, type = 'info', duration = 5000, showProgress = false) {
@@ -1500,10 +1953,8 @@ def index():
             
             toastContainer.appendChild(toast);
             
-            // Trigger animation
             setTimeout(() => toast.classList.add('show'), 10);
             
-            // Auto remove
             if (duration > 0) {
                 setTimeout(() => removeToast(toast), duration);
             }
@@ -1543,6 +1994,184 @@ def index():
             }
         }
         
+        // YOLO Model functions
+        async function loadModelInfo() {
+            try {
+                const response = await fetch('/get_model_info');
+                const data = await response.json();
+                
+                if (data.success) {
+                    modelInfo = data.model_info;
+                    updateYoloStatus(true);
+                    displayModelInfo(modelInfo);
+                } else {
+                    updateYoloStatus(false);
+                    displayModelError(data.error);
+                }
+            } catch (error) {
+                updateYoloStatus(false);
+                displayModelError('Failed to connect to model service');
+            }
+        }
+        
+        function updateYoloStatus(connected) {
+            const status = document.getElementById('yolo-status');
+            if (connected) {
+                status.textContent = 'Model Loaded';
+                status.className = 'yolo-status connected';
+            } else {
+                status.textContent = 'No Model';
+                status.className = 'yolo-status disconnected';
+            }
+        }
+        
+        function displayModelInfo(info) {
+            const container = document.getElementById('model-info-container');
+            const classNames = Object.values(info.classes).slice(0, 10); // Show first 10 classes
+            const moreClasses = info.num_classes - 10;
+            
+            container.innerHTML = `
+                <div class="model-info">
+                    <h4>Model: ${info.name}</h4>
+                    <p><strong>Classes:</strong> ${info.num_classes}</p>
+                    <div class="class-list">
+                        ${classNames.map(name => `<span class="class-tag">${name}</span>`).join('')}
+                        ${moreClasses > 0 ? `<span class="class-tag">+${moreClasses} more</span>` : ''}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function displayModelError(error) {
+            const container = document.getElementById('model-info-container');
+            container.innerHTML = `
+                <div class="model-info" style="border-color: rgba(231, 76, 60, 0.3); background: rgba(231, 76, 60, 0.1);">
+                    <h4 style="color: #e74c3c;">⚠️ Model Not Available</h4>
+                    <p>${error}</p>
+                    <p><small>Place a YOLO model file (.pt, .onnx, .engine) in the 'models' folder to enable predictions.</small></p>
+                </div>
+            `;
+        }
+        
+        function togglePredictionMode() {
+            const toggle = document.getElementById('prediction-toggle');
+            predictionMode = !predictionMode;
+            
+            if (predictionMode) {
+                toggle.classList.add('active');
+            } else {
+                toggle.classList.remove('active');
+            }
+            
+            // Update predict button visibility
+            updatePredictButtonVisibility();
+        }
+        
+        function updatePredictButtonVisibility() {
+            const predictBtn = document.getElementById('predict-btn');
+            if (predictionMode && modelInfo) {
+                predictBtn.style.display = 'block';
+            } else {
+                predictBtn.style.display = 'none';
+            }
+        }
+        
+        async function runPrediction() {
+            if (!predictionMode || !modelInfo || !frames.length) {
+                showToast('YOLO predictions not available', 'warning');
+                return;
+            }
+            
+            const button = document.getElementById('predict-btn');
+            setButtonLoading(button, true);
+            
+            try {
+                const currentFrame = frames[currentFrameIndex];
+                const confidence = parseFloat(document.getElementById('confidence-threshold').value);
+                
+                const response = await fetch('/predict_frame', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        frame_data: currentFrame.data,
+                        confidence: confidence
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Store predictions for this frame
+                    framePredictions.set(currentFrameIndex, {
+                        annotations: data.annotations,
+                        annotated_frame: data.annotated_frame
+                    });
+                    
+                    // Update the display to show the annotated frame
+                    updateFrameDisplay();
+                    showAnnotations(data.annotations);
+                    showToast(`Found ${data.annotations.length} detections`, 'success');
+                } else {
+                    showToast('Prediction failed: ' + data.error, 'error');
+                }
+            } catch (error) {
+                showToast('Error running prediction: ' + error.message, 'error');
+            } finally {
+                setButtonLoading(button, false);
+            }
+        }
+        
+        function showAnnotations(annotations) {
+            const annotationInfo = document.getElementById('annotation-info');
+            const annotationList = document.getElementById('annotation-list');
+            
+            if (annotations.length > 0) {
+                annotationList.innerHTML = annotations.map(ann => `
+                    <div class="annotation-item">
+                        <span>${ann.class_name}</span>
+                        <span class="annotation-confidence">${(ann.confidence * 100).toFixed(1)}%</span>
+                    </div>
+                `).join('');
+                annotationInfo.classList.add('active');
+            } else {
+                annotationList.innerHTML = '<div class="annotation-item">No detections found</div>';
+                annotationInfo.classList.add('active');
+            }
+        }
+        
+        function hideAnnotations() {
+            const annotationInfo = document.getElementById('annotation-info');
+            annotationInfo.classList.remove('active');
+        }
+        
+        function updateFrameDisplay() {
+            if (!frames.length) return;
+            
+            const frame = frames[currentFrameIndex];
+            const img = document.getElementById('frame-image');
+            
+            // Show annotated frame if predictions exist, otherwise show original
+            if (framePredictions.has(currentFrameIndex)) {
+                const prediction = framePredictions.get(currentFrameIndex);
+                img.src = `data:image/jpeg;base64,${prediction.annotated_frame}`;
+                img.classList.add('predicted');
+                showAnnotations(prediction.annotations);
+            } else {
+                img.src = `data:image/jpeg;base64,${frame.data}`;
+                img.classList.remove('predicted');
+                hideAnnotations();
+            }
+            
+            // Update selection styling
+            if (selectedFrames.has(currentFrameIndex)) {
+                img.classList.add('selected');
+            } else {
+                img.classList.remove('selected');
+            }
+        }
+        
         // Load Roboflow config from localStorage
         function loadRoboflowConfig() {
             const saved = localStorage.getItem('roboflowConfig');
@@ -1556,7 +2185,6 @@ def index():
             }
         }
         
-        // Save Roboflow configuration
         function saveRoboflowConfig() {
             const url = document.getElementById('roboflow-url').value.trim();
             const apiKey = document.getElementById('roboflow-api-key').value.trim();
@@ -1581,7 +2209,6 @@ def index():
             showToast('Roboflow configuration saved successfully', 'success');
         }
         
-        // Test Roboflow connection
         async function testRoboflowConnection() {
             const url = document.getElementById('roboflow-url').value.trim();
             const apiKey = document.getElementById('roboflow-api-key').value.trim();
@@ -1612,7 +2239,6 @@ def index():
                 
                 if (data.success) {
                     showToast(data.message, 'success');
-                    // Save config if test successful
                     saveRoboflowConfig();
                 } else {
                     showToast(data.message || 'Connection test failed', 'error');
@@ -1639,12 +2265,14 @@ def index():
         // Initialize on page load
         window.addEventListener('load', () => {
             loadRoboflowConfig();
+            loadModelInfo();
             initializeTimeline();
+            updatePredictButtonVisibility();
         });
         
         // Keyboard event listeners
         document.addEventListener('keydown', (e) => {
-            if (!frames.length) return;
+            if (document.querySelector('.frame-selector').style.display !== 'block' || !frames.length) return;
             
             switch(e.key) {
                 case 'ArrowLeft':
@@ -1659,6 +2287,11 @@ def index():
                     e.preventDefault();
                     toggleSelection();
                     break;
+                case 'p':
+                case 'P':
+                    e.preventDefault();
+                    runPrediction();
+                    break;
                 case 'Enter':
                     e.preventDefault();
                     finishVideo();
@@ -1671,6 +2304,7 @@ def index():
             const timeline = document.getElementById('timeline');
             
             timeline.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return; // Only main left click
                 const selection = document.getElementById('timeline-selection');
                 const leftHandle = selection.querySelector('.left');
                 const rightHandle = selection.querySelector('.right');
@@ -1704,24 +2338,14 @@ def index():
                 const mouseTime = Math.max(0, Math.min(videoDuration, mousePos * videoDuration));
                 
                 if (dragType === 'move') {
-                    // This logic seems a bit off, let's fix it
-                    const selection = document.getElementById('timeline-selection');
-                    const selectionWidth = selection.offsetWidth;
-                    const timelineWidth = timeline.offsetWidth;
-                    const startOffset = (segmentStart / videoDuration) * timelineWidth;
-                    
-                    // The original click-based logic for moving is better. This mousemove should be more precise.
-                    // A better way is to store the initial mouse position and selection start on mousedown.
-                    // For now, let's stick to a simplified version that works.
                     segmentStart = Math.max(0, Math.min(videoDuration - segmentDuration, mouseTime - segmentDuration / 2));
-
                 } else if (dragType === 'left') {
                     const currentEnd = segmentStart + segmentDuration;
-                    const newStart = Math.min(mouseTime, currentEnd - 1); // Ensure it doesn't cross the right handle
+                    const newStart = Math.min(mouseTime, currentEnd - 1);
                     segmentDuration = currentEnd - newStart;
                     segmentStart = newStart;
                 } else if (dragType === 'right') {
-                    const newEnd = Math.max(mouseTime, segmentStart + 1); // Ensure it doesn't cross the left handle
+                    const newEnd = Math.max(mouseTime, segmentStart + 1);
                     segmentDuration = newEnd - segmentStart;
                 }
                 
@@ -1782,7 +2406,6 @@ def index():
             const timeline = document.getElementById('timeline');
             const selection = document.getElementById('timeline-selection');
 
-            // Remove only old thumbnails, not the selection element
             timeline.querySelectorAll('.timeline-thumbnail').forEach(el => el.remove());
 
             const fragment = document.createDocumentFragment();
@@ -1794,7 +2417,6 @@ def index():
                 fragment.appendChild(img);
             });
             
-            // Insert all images before the selection slider for better performance
             timeline.insertBefore(fragment, selection);
         }
         
@@ -1908,10 +2530,11 @@ def index():
             }
             
             currentVideoIndex = 0;
-            document.getElementById('frame-selector').style.display = 'block';
+            document.querySelector('.frame-selector').style.display = 'block';
             document.querySelector('.upload-section').style.display = 'none';
             document.getElementById('video-list').style.display = 'none';
             document.querySelector('.roboflow-section').style.display = 'none';
+            document.querySelector('.yolo-section').style.display = 'none';
             
             videoDuration = 0;
             
@@ -1931,9 +2554,10 @@ def index():
             frames = [];
             currentFrameIndex = 0;
             selectedFrames.clear();
+            framePredictions.clear();
             document.getElementById('frame-viewer').style.display = 'none';
+            hideAnnotations();
             
-            // Clear old thumbnails before loading new ones
             const timeline = document.getElementById('timeline');
             timeline.querySelectorAll('.timeline-thumbnail').forEach(el => el.remove());
             
@@ -1964,7 +2588,6 @@ def index():
                         showToast('Error loading video preview.', 'warning');
                     }, { once: true });
 
-                    // Fetch timeline thumbnails
                     const thumbResponse = await fetch('/get_timeline_thumbnails', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1988,6 +2611,7 @@ def index():
         async function loadSegment() {
             document.getElementById('loading').style.display = 'block';
             document.getElementById('frame-viewer').style.display = 'none';
+            hideAnnotations();
             
             try {
                 const response = await fetch('/extract_frames', {
@@ -2007,6 +2631,7 @@ def index():
                     frames = data.frames;
                     currentFrameIndex = 0;
                     selectedFrames.clear();
+                    framePredictions.clear();
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('frame-viewer').style.display = 'block';
                     displayFrame();
@@ -2025,21 +2650,18 @@ def index():
             if (!frames.length) return;
             
             const frame = frames[currentFrameIndex];
-            const img = document.getElementById('frame-image');
-            img.src = `data:image/jpeg;base64,${frame.data}`;
             
-            if (selectedFrames.has(currentFrameIndex)) {
-                img.classList.add('selected');
-            } else {
-                img.classList.remove('selected');
-            }
+            // Update frame display with annotations if available
+            updateFrameDisplay();
             
             const info = document.getElementById('frame-info');
             const selectedText = selectedFrames.has(currentFrameIndex) ? 
                 '<span class="selected-indicator">[SELECTED]</span>' : '';
+            const predictionText = framePredictions.has(currentFrameIndex) ? 
+                '<span class="predicted-indicator">[PREDICTED]</span>' : '';
             info.innerHTML = `Frame ${currentFrameIndex + 1}/${frames.length} | ` +
                            `Time: ${frame.time.toFixed(1)}s | ` +
-                           `Selected: ${selectedFrames.size} ${selectedText}`;
+                           `Selected: ${selectedFrames.size} ${selectedText} ${predictionText}`;
             
             const progress = ((currentFrameIndex + 1) / frames.length) * 100;
             const progressFill = document.getElementById('progress-fill');
@@ -2091,6 +2713,21 @@ def index():
                     split: document.getElementById('roboflow-split').value
                 };
 
+                // Prepare frame data with predictions
+                const selectedFrameData = Array.from(selectedFrames).map(frameIndex => {
+                    const frameData = {
+                        ...frames[frameIndex],
+                        frameIndex: frameIndex
+                    };
+                    
+                    // Add prediction data if available
+                    if (framePredictions.has(frameIndex)) {
+                        frameData.predictions = framePredictions.get(frameIndex);
+                    }
+                    
+                    return frameData;
+                });
+
                 try {
                     const response = await fetch('/save_frames', {
                         method: 'POST',
@@ -2100,7 +2737,7 @@ def index():
                         body: JSON.stringify({
                             video_id: currentVideoId,
                             selected_indices: Array.from(selectedFrames),
-                            frames: frames.filter((_, idx) => selectedFrames.has(idx)),
+                            frames: selectedFrameData,
                             upload_to_roboflow: uploadToRoboflow,
                             roboflow_config: uploadToRoboflow ? finalRoboflowConfig : null
                         })
@@ -2116,12 +2753,16 @@ def index():
                         if (data.roboflow_results) {
                             const uploaded = data.roboflow_results.filter(r => r.success).length;
                             const failed = data.roboflow_results.filter(r => !r.success).length;
+                            const withAnnotations = data.roboflow_results.filter(r => r.with_annotations).length;
                             
                             if (failed > 0) {
                                 message += `. Roboflow: ${uploaded} uploaded, ${failed} failed`;
                                 toastType = 'warning';
                             } else {
                                 message += `. All ${uploaded} frames uploaded to Roboflow successfully`;
+                                if (withAnnotations > 0) {
+                                    message += ` (${withAnnotations} with YOLO annotations)`;
+                                }
                             }
                         }
                         
@@ -2139,10 +2780,21 @@ def index():
             loadCurrentVideo();
         }
         
-        function resetInterface() {
-            document.getElementById('frame-selector').style.display = 'none';
+        function showMainMenu() {
+            document.querySelector('.frame-selector').style.display = 'none';
             document.querySelector('.upload-section').style.display = 'block';
             document.querySelector('.roboflow-section').style.display = 'block';
+            document.querySelector('.yolo-section').style.display = 'block';
+            if (videos.length > 0) {
+                document.getElementById('video-list').style.display = 'block';
+            }
+        }
+
+        function resetInterface() {
+            document.querySelector('.frame-selector').style.display = 'none';
+            document.querySelector('.upload-section').style.display = 'block';
+            document.querySelector('.roboflow-section').style.display = 'block';
+            document.querySelector('.yolo-section').style.display = 'block';
             videos = [];
             updateVideoList();
         }
@@ -2151,6 +2803,7 @@ def index():
 </html>
     '''
 
+# Add the missing Flask routes
 @app.route('/add_youtube', methods=['POST'])
 def add_youtube():
     """Add a YouTube video to the processing queue"""
@@ -2285,7 +2938,7 @@ def get_timeline_thumbnails_endpoint():
 
 @app.route('/save_frames', methods=['POST'])
 def save_frames():
-    """Save selected frames to disk and optionally upload to Roboflow"""
+    """Save selected frames to disk and optionally upload to Roboflow with annotations"""
     data = request.json
     video_id = data.get('video_id')
     selected_indices = data.get('selected_indices', [])
@@ -2308,11 +2961,24 @@ def save_frames():
     for i, frame_data in enumerate(frames_data):
         frame_bytes = base64.b64decode(frame_data['data'])
         frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
-        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR);
+        frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
         
         filename = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.png'
         filepath = os.path.join(output_dir, filename)
         cv2.imwrite(filepath, frame)
+        
+        # Save YOLO annotation if predictions exist
+        annotation_data = None
+        if 'predictions' in frame_data and frame_data['predictions']['annotations']:
+            annotations = frame_data['predictions']['annotations']
+            img_height, img_width = frame.shape[:2]
+            annotation_data = create_yolo_annotation_file(annotations, img_width, img_height)
+            
+            # Save annotation file locally
+            annotation_filename = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.txt'
+            annotation_filepath = os.path.join(output_dir, annotation_filename)
+            with open(annotation_filepath, 'w') as f:
+                f.write(annotation_data)
         
         if upload_to_roboflow and roboflow_config.get('apiKey') and roboflow_config.get('url'):
             image_name = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.jpg'
@@ -2326,12 +2992,14 @@ def save_frames():
                 frame_data['data'],
                 image_name,
                 split=split,
-                batch_name=batch_name
+                batch_name=batch_name,
+                annotation_data=annotation_data
             )
             roboflow_results.append({
                 'frame': i,
                 'success': success,
-                'message': message
+                'message': message,
+                'with_annotations': annotation_data is not None
             })
     
     response_data = {
@@ -2357,4 +3025,4 @@ def cleanup():
     return jsonify({'success': True})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    app.run(debug=True, port=5001)
