@@ -1737,11 +1737,6 @@ def index():
 </head>
 <body>
     <div class="toast-container" id="toast-container"></div>
-
-    <header>
-        <h1>Video Frame Selector with YOLO & Roboflow Integration</h1>
-        <div class="subtitle">Extract frames, run YOLO predictions, and upload to Roboflow with annotations</div>
-    </header>
     
     <div class="container">
         <div class="yolo-section">
@@ -2713,16 +2708,24 @@ def index():
                     split: document.getElementById('roboflow-split').value
                 };
 
-                // Prepare frame data with predictions
+                // Prepare frame data with predictions - FIXED VERSION
                 const selectedFrameData = Array.from(selectedFrames).map(frameIndex => {
                     const frameData = {
                         ...frames[frameIndex],
                         frameIndex: frameIndex
                     };
                     
-                    // Add prediction data if available
+                    // Add prediction data if available - ensure proper structure
                     if (framePredictions.has(frameIndex)) {
-                        frameData.predictions = framePredictions.get(frameIndex);
+                        const prediction = framePredictions.get(frameIndex);
+                        frameData.predictions = {
+                            annotations: prediction.annotations || [],
+                            annotated_frame: prediction.annotated_frame || null
+                        };
+                        console.log(`Frame ${frameIndex} has ${prediction.annotations.length} annotations`);
+                    } else {
+                        frameData.predictions = null;
+                        console.log(`Frame ${frameIndex} has no predictions`);
                     }
                     
                     return frameData;
@@ -2755,9 +2758,15 @@ def index():
                             const failed = data.roboflow_results.filter(r => !r.success).length;
                             const withAnnotations = data.roboflow_results.filter(r => r.with_annotations).length;
                             
+                            console.log('Roboflow upload results:', data.roboflow_results);
+                            
                             if (failed > 0) {
                                 message += `. Roboflow: ${uploaded} uploaded, ${failed} failed`;
                                 toastType = 'warning';
+                                
+                                // Show details of failed uploads
+                                const failedFrames = data.roboflow_results.filter(r => !r.success);
+                                console.error('Failed uploads:', failedFrames);
                             } else {
                                 message += `. All ${uploaded} frames uploaded to Roboflow successfully`;
                                 if (withAnnotations > 0) {
@@ -2959,47 +2968,64 @@ def save_frames():
     roboflow_results = []
     
     for i, frame_data in enumerate(frames_data):
+        frame_index = frame_data.get('frameIndex', i)
+        
+        # Decode the original frame (not annotated) for upload
         frame_bytes = base64.b64decode(frame_data['data'])
         frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
         frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
+        
+        if frame is None:
+            print(f"Failed to decode frame {i}")
+            continue
         
         filename = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.png'
         filepath = os.path.join(output_dir, filename)
         cv2.imwrite(filepath, frame)
         
-        # Save YOLO annotation if predictions exist
+        # Handle YOLO annotations if they exist
         annotation_data = None
-        if 'predictions' in frame_data and frame_data['predictions']['annotations']:
+        if 'predictions' in frame_data and frame_data['predictions'] and 'annotations' in frame_data['predictions']:
             annotations = frame_data['predictions']['annotations']
-            img_height, img_width = frame.shape[:2]
-            annotation_data = create_yolo_annotation_file(annotations, img_width, img_height)
-            
-            # Save annotation file locally
-            annotation_filename = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.txt'
-            annotation_filepath = os.path.join(output_dir, annotation_filename)
-            with open(annotation_filepath, 'w') as f:
-                f.write(annotation_data)
+            if annotations:  # Check if annotations list is not empty
+                img_height, img_width = frame.shape[:2]
+                annotation_data = create_yolo_annotation_file(annotations, img_width, img_height)
+                
+                # Save annotation file locally
+                annotation_filename = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.txt'
+                annotation_filepath = os.path.join(output_dir, annotation_filename)
+                with open(annotation_filepath, 'w') as f:
+                    f.write(annotation_data)
+                
+                print(f"Created annotation file for frame {i}: {annotation_filename}")
+                print(f"Annotation content: {annotation_data}")
         
+        # Upload to Roboflow if configured
         if upload_to_roboflow and roboflow_config.get('apiKey') and roboflow_config.get('url'):
             image_name = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.jpg'
             
             batch_name = roboflow_config.get('batchName') if roboflow_config.get('batchName') else video_name_raw
             split = roboflow_config.get('split', 'train')
 
+            print(f"Uploading frame {i} to Roboflow with annotations: {annotation_data is not None}")
+            
             success, message = upload_to_roboflow_api(
                 roboflow_config['apiKey'],
                 roboflow_config['url'],
-                frame_data['data'],
+                frame_data['data'],  # Use original frame data
                 image_name,
                 split=split,
                 batch_name=batch_name,
                 annotation_data=annotation_data
             )
+            
             roboflow_results.append({
                 'frame': i,
+                'frame_index': frame_index,
                 'success': success,
                 'message': message,
-                'with_annotations': annotation_data is not None
+                'with_annotations': annotation_data is not None,
+                'annotation_preview': annotation_data[:100] if annotation_data else None
             })
     
     response_data = {
@@ -3025,4 +3051,4 @@ def cleanup():
     return jsonify({'success': True})
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=5000)
