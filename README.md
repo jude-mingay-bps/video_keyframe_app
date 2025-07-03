@@ -9,9 +9,10 @@ A self-hosted web utility to effortlessly extract high-quality frames from any v
 
 ## ✨ Core Features
 
-| Feature                    | Description                                                                                                                                              |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Feature                       | Description                                                                                                                                              |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **📺 Multi-Source Input** | Add videos by pasting a **YouTube URL** or uploading local files (`.mp4`, `.mov`, `.avi`, etc.).                                                            |
+| **🤖 Integrated YOLO Predictions** | Run a local YOLO model on frames within the browser. Bounding boxes are drawn instantly, and annotations are uploaded directly to Roboflow. |
 | **🎞️ Visual Timeline Scrubber** | A thumbnail-generated timeline provides a bird's-eye view of the video, allowing for precise clip selection without guesswork.                             |
 | **✂️ Precise Segmenting** | Use a draggable and resizable window on the timeline to isolate the exact video segment you want to process.                                            |
 | **🖼️ Frame-by-Frame Analysis** | Step through extracted frames one-by-one for careful inspection and selection.                                                                        |
@@ -19,7 +20,7 @@ A self-hosted web utility to effortlessly extract high-quality frames from any v
 | **🤖 Direct Roboflow Upload** | Securely connect to your Roboflow account to upload selected frames directly to your project and desired dataset split (train, valid, or test).      |
 | **🗂️ Organized Batches** | Assign a custom batch name for each upload job to keep your Roboflow datasets neatly organized.                                                          |
 | **⚡ Efficient Workflow** | A video processing queue lets you line up multiple videos and process them in a single, uninterrupted session.                                        |
-| **⌨️ Keyboard Shortcuts** | Navigate (`←`, `→`), select (`Space`), and finish (`Enter`) with keyboard shortcuts for maximum efficiency.                                               |
+| **⌨️ Keyboard Shortcuts** | Navigate (`←`, `→`), select (`Space`), predict (`P`), and finish (`Enter`) with keyboard shortcuts for maximum efficiency.                                               |
 | **🔒 Self-Hosted & Secure** | Runs locally on your machine. Your videos and private Roboflow API keys are never exposed to external servers.                                         |
 | **📱 Responsive UI** | A clean, modern interface that works beautifully on any screen size.                                                                                    |
 
@@ -40,8 +41,8 @@ Follow these instructions to get the application running on your local machine.
 1.  **Clone the Repository**
     Open your terminal and run the following commands:
     ```bash
-    git clone <your-repository-url>
-    cd <repository-directory>
+    git clone git@github.com:jude-mingay-bps/video_keyframe_app.git
+    cd video_keyframe_app
     ```
 
 2.  **Create and Activate a Virtual Environment**
@@ -63,7 +64,6 @@ Follow these instructions to get the application running on your local machine.
     ```bash
     pip install -r requirements.txt
     ```
-    *(Note: Ensure you have a `requirements.txt` file in your repository with the content you provided.)*
 
 4.  **Run the Application**
     Launch the Flask server:
@@ -73,7 +73,39 @@ Follow these instructions to get the application running on your local machine.
     The server will start, typically on `http://127.0.0.1:5000`.
 
 5.  **Open in Browser**
-    Navigate to **<http://127.0.0.1:5000>** in your web browser to start using the tool.
+    Navigate to **http://127.0.0.1:5000** in your web browser to start using the tool.
+
+---
+## 🐳 Docker Deployment (Alternative)
+
+For a quick and isolated setup, you can run the application inside a Docker container. This is the recommended method for avoiding dependency conflicts.
+
+### Prerequisites
+* [Docker](https://www.docker.com/get-started) installed and running on your machine.
+
+### Instructions
+1.  **Place Your Model (Optional)**
+    If you want to use the YOLO prediction feature, create a `models` directory in the project folder and place your model file (e.g., `yolov8s.pt`) inside it.
+
+2.  **Build the Docker Image**
+    Open your terminal in the project's root directory and run:
+    ```bash
+    docker build -t video-to-roboflow .
+    ```
+
+3.  **Run the Docker Container**
+    This command starts the application and connects your local `models`, `output`, and `uploads` folders to the container for persistent storage.
+    ```bash
+    docker run -d -p 5000:5000 \
+      -v "$(pwd)/models:/app/models" \
+      -v "$(pwd)/output:/app/output" \
+      -v "$(pwd)/uploads:/app/uploads" \
+      --name roboflow-uploader \
+      video-to-roboflow
+    ```
+
+4.  **Open in Browser**
+    Navigate to **http://localhost:5000** in your web browser.
 
 ---
 
@@ -81,33 +113,28 @@ Follow these instructions to get the application running on your local machine.
 
 The user interface is designed to be intuitive. For best results, follow this workflow:
 
-1.  **Configure Roboflow (Required for Upload)**
-    * Enter your **Roboflow Project URL** and **Private API Key**. Your key is treated like a password and stored only in your browser's local storage.
-    * (Optional) Set a **Custom Batch Name**. If left empty, the video's filename is used.
-    * Select the **Upload Split** (`train`, `valid`, or `test`).
-    * Click **Save Configuration**. You can test the connection to ensure your credentials are correct.
-    `[Image: Screenshot of the Roboflow configuration section]`
+1.  **Configure Roboflow & YOLO**
+    * **Roboflow**: Enter your **Project URL** and **API Key**. Click **Save Configuration**.
+    * **YOLO**: The application will automatically detect any models in your `models` folder. To use them, **enable the prediction toggle switch** and adjust the confidence threshold as needed.
 
 2.  **Add Videos to the Queue**
     * **From YouTube**: Paste a video URL and click **Add YouTube Video**.
     * **From Local File**: Click **Choose File**, select a video, and click **Upload File**.
-    * Add as many videos as you need before processing.
 
 3.  **Start Processing & Select a Segment**
     * Click **Start Processing** to load the first video.
     * On the timeline, drag the purple selection window and resize it to define your clip.
     * Click **Load Frames** to extract all frames from this segment.
-    `[Image: Screenshot of the timeline scrubber and segment selection]`
 
-4.  **Select Your Frames**
-    * Navigate through the frames using the `←` and `→` arrow keys or the on-screen buttons.
-    * Press the `Spacebar` or click **Toggle Selection** to select or deselect a frame.
-    `[Image: Screenshot of the frame-by-frame view with a selected frame]`
+4.  **Select and Predict on Frames**
+    * Navigate through frames using the `←` and `→` arrow keys.
+    * Press the `Spacebar` to select/deselect a frame.
+    * With the prediction toggle enabled, press the `P` key or click **Run Prediction** to generate annotations for the current frame. The frame will be updated with bounding boxes.
 
 5.  **Finish and Upload**
-    * Once you're done selecting frames for a video, click **Finish This Video**.
-    * Your selected frames will be uploaded directly to your configured Roboflow project.
-    * The application will automatically load the next video in your queue.
+    * Once you're done, click **Finish This Video**.
+    * Selected frames are uploaded to Roboflow. If a frame has YOLO predictions, its corresponding `.txt` annotation file will be **uploaded automatically** with it.
+    * The application loads the next video in your queue.
 
 ---
 
@@ -116,10 +143,9 @@ The user interface is designed to be intuitive. For best results, follow this wo
 This tool is highly functional, but here are some potential features and improvements for the future:
 
 * [ ] **Asynchronous Video Processing**: Implement a background worker queue for handling very large video files without blocking the UI.
-* [ ] **Pre-Annotation with a Model**: Add an option to run a baseline model (e.g., YOLO) on frames and upload them with initial predictions.
-* [ ] **Dockerization**: Provide a `Dockerfile` for easy, one-command deployment.
 * [ ] **User Sessions**: Support multiple users or saving sessions to return to later.
-* [ ] **Additional Export Options**: Allow saving frames with annotation metadata in formats like COCO or YOLO TXT.
+* [ ] **Additional Export Options**: Allow saving frames with annotation metadata in formats like COCO.
+* [x] **Dockerization**: Provide a `Dockerfile` for easy, one-command deployment.
 
 ---
 
@@ -131,4 +157,4 @@ Contributions are welcome! If you have ideas for new features or improvements, p
 
 ## 📜 License
 
-This project is licensed under the [MIT License](LICENSE). *(Replace MIT License with your actual license)*
+This project is licensed under the MIT License.
