@@ -294,7 +294,42 @@ def extract_timeline_thumbnails(video_path, num_thumbnails=20):
     return thumbnails
 
 def test_roboflow_connection(api_key, project_url):
-    """Test if Roboflow connection is valid"""
+    """Test if Roboflow connection is valid using the Python SDK approach"""
+    try:
+        # Try to import roboflow - if not available, fall back to REST API
+        try:
+            from roboflow import Roboflow
+            rf = Roboflow(api_key=api_key)
+            
+            # Parse project URL to get workspace and project name
+            if 'roboflow.com' in project_url:
+                parts = project_url.split('/')
+                for i, part in enumerate(parts):
+                    if 'roboflow.com' in part and i + 2 < len(parts):
+                        workspace_name = parts[i + 1]
+                        project_name = parts[i + 2]
+                        break
+                else:
+                    return False, "Could not parse workspace and project from URL"
+            else:
+                return False, "Invalid Roboflow URL format"
+            
+            # Try to access the project
+            workspace = rf.workspace(workspace_name)
+            project = workspace.project(project_name)
+            
+            return True, f"Connected to {workspace_name}/{project_name} using Python SDK"
+            
+        except ImportError:
+            print("Roboflow Python SDK not available, falling back to REST API")
+            # Fall back to REST API method
+            return test_roboflow_connection_rest_api(api_key, project_url)
+            
+    except Exception as e:
+        return False, f"Connection error: {str(e)}"
+
+def test_roboflow_connection_rest_api(api_key, project_url):
+    """Test Roboflow connection using REST API"""
     try:
         project_url = project_url.rstrip('/')
         
@@ -319,15 +354,103 @@ def test_roboflow_connection(api_key, project_url):
         response = requests.get(test_url, params=params)
         
         if response.status_code == 200:
-            return True, f"Connected to {workspace}/{project}"
+            return True, f"Connected to {workspace}/{project} using REST API"
         else:
             return False, f"Invalid project or API key: {response.text}"
             
     except Exception as e:
         return False, f"Connection error: {str(e)}"
 
-def upload_to_roboflow_api(api_key, project_url, image_data, image_name, split='train', batch_name=None, annotation_data=None):
-    """Upload image to Roboflow project with optional annotations"""
+def upload_to_roboflow_sdk(api_key, project_url, image_data, image_name, split='train', batch_name=None, annotation_data=None, label_map=None):
+    """Upload image to Roboflow using the Python SDK (preferred method)"""
+    try:
+        from roboflow import Roboflow
+        
+        if 'roboflow.com' in project_url:
+            parts = project_url.split('/')
+            for i, part in enumerate(parts):
+                if 'roboflow.com' in part and i + 2 < len(parts):
+                    workspace_name = parts[i + 1]
+                    project_name = parts[i + 2]
+                    break
+            else:
+                return False, "Could not parse workspace and project from URL"
+        else:
+            return False, "Invalid Roboflow URL format"
+        
+        rf = Roboflow(api_key=api_key)
+        project = rf.workspace(workspace_name).project(project_name)
+        
+        temp_dir = tempfile.gettempdir()
+        base_name = os.path.splitext(image_name)[0]
+        unique_id = str(uuid.uuid4())[:8]
+        temp_base_path = os.path.join(temp_dir, f"{base_name}-{unique_id}")
+
+        image_temp_path = temp_base_path + '.jpg'
+        annotation_temp_path = None
+        labelmap_temp_path = None
+        
+        try:
+            image_bytes = base64.b64decode(image_data)
+            with open(image_temp_path, 'wb') as tmp_img:
+                tmp_img.write(image_bytes)
+            
+            if annotation_data:
+                annotation_temp_path = temp_base_path + '.txt'
+                with open(annotation_temp_path, 'w') as tmp_ann:
+                    tmp_ann.write(annotation_data)
+                
+                # Create a temporary label map file if a map is provided
+                if label_map:
+                    # Sort the classes by their ID to ensure the correct order
+                    sorted_class_names = [name for id, name in sorted(label_map.items())]
+                    labelmap_content = "\n".join(sorted_class_names)
+                    
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.labels', delete=False) as tmp_label:
+                        tmp_label.write(labelmap_content)
+                        labelmap_temp_path = tmp_label.name
+                    print(f"Created temporary label map: {labelmap_temp_path}")
+
+            upload_params = {
+                'image_path': image_temp_path,
+                'split': split
+            }
+            
+            if annotation_temp_path:
+                upload_params['annotation_path'] = annotation_temp_path
+            
+            if labelmap_temp_path:
+                upload_params['annotation_labelmap'] = labelmap_temp_path
+            
+            if batch_name:
+                upload_params['batch_name'] = batch_name
+            
+            print(f"Uploading {image_name} to {workspace_name}/{project_name}")
+            print(f"Upload parameters: {upload_params}")
+            
+            result = project.single_upload(**upload_params)
+            
+            print(f"Upload result: {result}")
+            
+            return True, f"Image uploaded successfully via SDK: {result}"
+            
+        finally:
+            if os.path.exists(image_temp_path):
+                os.remove(image_temp_path)
+            if annotation_temp_path and os.path.exists(annotation_temp_path):
+                os.remove(annotation_temp_path)
+            if labelmap_temp_path and os.path.exists(labelmap_temp_path):
+                os.remove(labelmap_temp_path)
+                
+    except ImportError:
+        print("Roboflow SDK not available, falling back to REST API")
+        return upload_to_roboflow_rest_api(api_key, project_url, image_data, image_name, split, batch_name, annotation_data)
+    except Exception as e:
+        print(f"SDK upload error: {str(e)}")
+        return False, f"SDK upload error: {str(e)}"
+
+def upload_to_roboflow_rest_api(api_key, project_url, image_data, image_name, split='train', batch_name=None, annotation_data=None):
+    """Upload image to Roboflow project using REST API (fallback method)"""
     try:
         project_url = project_url.rstrip('/')
         
@@ -347,14 +470,20 @@ def upload_to_roboflow_api(api_key, project_url, image_data, image_name, split='
         
         image_bytes = base64.b64decode(image_data)
         
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
-            tmp_file.write(image_bytes)
-            tmp_path = tmp_file.name
+        # Create temporary files
+        image_temp_path = None
+        annotation_temp_path = None
         
         try:
-            files = {'file': (image_name, open(tmp_path, 'rb'), 'image/jpeg')}
+            # Create temporary image file
+            with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as tmp_file:
+                tmp_file.write(image_bytes)
+                image_temp_path = tmp_file.name
             
+            # Prepare files for upload
+            files = {'file': (image_name, open(image_temp_path, 'rb'), 'image/jpeg')}
+            
+            # Prepare parameters
             params = {
                 'api_key': api_key,
                 'name': image_name,
@@ -366,32 +495,25 @@ def upload_to_roboflow_api(api_key, project_url, image_data, image_name, split='
             
             # Add annotation data if provided
             if annotation_data:
-                annotation_name = image_name.rsplit('.', 1)[0] + '.txt'
+                # Create annotation file name matching image name
+                annotation_name = os.path.splitext(image_name)[0] + '.txt'
+                
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as ann_file:
                     ann_file.write(annotation_data)
-                    ann_path = ann_file.name
+                    annotation_temp_path = ann_file.name
                 
-                files['annotation'] = (annotation_name, open(ann_path, 'rb'), 'text/plain')
+                files['annotation'] = (annotation_name, open(annotation_temp_path, 'rb'), 'text/plain')
+                print(f"Added annotation file: {annotation_name}")
             
             print(f"Uploading to: {upload_url}")
             print(f"Project: {project}")
             print(f"Image name: {image_name}")
-            print(f"Split: {split}")
-            if batch_name:
-                print(f"Batch name: {batch_name}")
-            if annotation_data:
-                print(f"With annotations: {annotation_name}")
-                print(f"Annotation content preview: {annotation_data[:100]}...")
+            print(f"With annotations: {annotation_data is not None}")
             
-            response = requests.post(upload_url, files=files, params=params)
-            
-            # Close files
-            for file_obj in files.values():
-                if hasattr(file_obj[1], 'close'):
-                    file_obj[1].close()
+            response = requests.post(upload_url, files=files, params=params, timeout=60)
             
             print(f"Response status: {response.status_code}")
-            print(f"Response text: {response.text[:200]}...")
+            print(f"Response text: {response.text[:500]}...")
             
             if response.status_code == 200:
                 try:
@@ -399,25 +521,42 @@ def upload_to_roboflow_api(api_key, project_url, image_data, image_name, split='
                     if 'error' in result:
                         return False, f"Upload error: {result['error']}"
                     elif 'success' in result and result['success']:
-                        return True, "Image uploaded successfully"
+                        return True, "Image uploaded successfully via REST API"
                     elif 'id' in result:
-                        return True, f"Image uploaded successfully (ID: {result['id']})"
+                        return True, f"Image uploaded successfully via REST API (ID: {result['id']})"
                     else:
-                        return True, "Image uploaded successfully"
+                        return True, "Image uploaded successfully via REST API"
                 except:
-                    return True, "Image uploaded successfully"
+                    return True, "Image uploaded successfully via REST API"
             else:
                 return False, f"Failed to upload (Status {response.status_code}): {response.text}"
-                
+        
         finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            if 'annotation_data' in locals() and annotation_data and 'ann_path' in locals() and os.path.exists(ann_path):
-                os.remove(ann_path)
+            # Clean up temporary files and close file handles
+            for file_obj in files.values():
+                if hasattr(file_obj[1], 'close'):
+                    file_obj[1].close()
+            
+            if image_temp_path and os.path.exists(image_temp_path):
+                os.remove(image_temp_path)
+            if annotation_temp_path and os.path.exists(annotation_temp_path):
+                os.remove(annotation_temp_path)
                 
     except Exception as e:
-        print(f"Exception during upload: {str(e)}")
-        return False, f"Error uploading to Roboflow: {str(e)}"
+        print(f"REST API upload error: {str(e)}")
+        return False, f"REST API upload error: {str(e)}"
+
+def upload_to_roboflow_api(api_key, project_url, image_data, image_name, split='train', batch_name=None, annotation_data=None, label_map=None):
+    """Upload image to Roboflow - tries SDK first, then falls back to REST API"""
+    # Try SDK first (preferred)
+    success, message = upload_to_roboflow_sdk(api_key, project_url, image_data, image_name, split, batch_name, annotation_data, label_map)
+    
+    if success:
+        return success, message
+    
+    # Fall back to REST API
+    print(f"SDK upload failed ({message}), trying REST API...")
+    return upload_to_roboflow_rest_api(api_key, project_url, image_data, image_name, split, batch_name, annotation_data)
 
 # Routes
 @app.route('/get_model_info')
@@ -2950,14 +3089,15 @@ def save_frames():
     """Save selected frames to disk and optionally upload to Roboflow with annotations"""
     data = request.json
     video_id = data.get('video_id')
-    selected_indices = data.get('selected_indices', [])
     frames_data = data.get('frames', [])
     upload_to_roboflow = data.get('upload_to_roboflow', False)
     roboflow_config = data.get('roboflow_config', {})
-    
+
     if not video_id or 'videos' not in session or video_id not in session['videos']:
         return jsonify({'success': False, 'error': 'Video not found'})
-    
+
+    model, model_info = load_yolo_model()
+
     video_info = session['videos'][video_id]
     video_name_raw = os.path.splitext(video_info['name'])[0]
     
@@ -2970,7 +3110,6 @@ def save_frames():
     for i, frame_data in enumerate(frames_data):
         frame_index = frame_data.get('frameIndex', i)
         
-        # Decode the original frame (not annotated) for upload
         frame_bytes = base64.b64decode(frame_data['data'])
         frame_array = np.frombuffer(frame_bytes, dtype=np.uint8)
         frame = cv2.imdecode(frame_array, cv2.IMREAD_COLOR)
@@ -2979,44 +3118,43 @@ def save_frames():
             print(f"Failed to decode frame {i}")
             continue
         
-        filename = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.png'
-        filepath = os.path.join(output_dir, filename)
+        image_base_name = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s'
+        image_filename_png = f'{image_base_name}.png'
+        filepath = os.path.join(output_dir, image_filename_png)
         cv2.imwrite(filepath, frame)
         
-        # Handle YOLO annotations if they exist
         annotation_data = None
-        if 'predictions' in frame_data and frame_data['predictions'] and 'annotations' in frame_data['predictions']:
-            annotations = frame_data['predictions']['annotations']
-            if annotations:  # Check if annotations list is not empty
+        if 'predictions' in frame_data and frame_data['predictions']:
+            predictions = frame_data['predictions']
+            if predictions and 'annotations' in predictions and predictions['annotations']:
+                annotations = predictions['annotations']
                 img_height, img_width = frame.shape[:2]
                 annotation_data = create_yolo_annotation_file(annotations, img_width, img_height)
                 
-                # Save annotation file locally
-                annotation_filename = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.txt'
+                annotation_filename = f'{image_base_name}.txt'
                 annotation_filepath = os.path.join(output_dir, annotation_filename)
                 with open(annotation_filepath, 'w') as f:
                     f.write(annotation_data)
-                
-                print(f"Created annotation file for frame {i}: {annotation_filename}")
-                print(f"Annotation content: {annotation_data}")
         
-        # Upload to Roboflow if configured
         if upload_to_roboflow and roboflow_config.get('apiKey') and roboflow_config.get('url'):
-            image_name = f'frame_{i+1:03d}_time_{frame_data["time"]:.1f}s.jpg'
+            image_name_for_upload = f'{image_base_name}.jpg'
             
-            batch_name = roboflow_config.get('batchName') if roboflow_config.get('batchName') else video_name_raw
+            # Create the batch name with the requested suffix
+            base_batch_name = roboflow_config.get('batchName') or video_name_raw
+            batch_name_for_upload = f"{base_batch_name} (Auto labeled Please review)"
+            
             split = roboflow_config.get('split', 'train')
 
-            print(f"Uploading frame {i} to Roboflow with annotations: {annotation_data is not None}")
-            
             success, message = upload_to_roboflow_api(
                 roboflow_config['apiKey'],
                 roboflow_config['url'],
-                frame_data['data'],  # Use original frame data
-                image_name,
+                frame_data['data'],
+                image_name_for_upload,
                 split=split,
-                batch_name=batch_name,
-                annotation_data=annotation_data
+                batch_name=batch_name_for_upload,
+                annotation_data=annotation_data,
+                # Pass the model's class map to the upload function
+                label_map=model_info['classes'] if model_info else None
             )
             
             roboflow_results.append({
@@ -3024,8 +3162,7 @@ def save_frames():
                 'frame_index': frame_index,
                 'success': success,
                 'message': message,
-                'with_annotations': annotation_data is not None,
-                'annotation_preview': annotation_data[:100] if annotation_data else None
+                'with_annotations': annotation_data is not None
             })
     
     response_data = {
