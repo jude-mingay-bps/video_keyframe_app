@@ -9,3 +9,4 @@ moviepy
 opencv-python-headless
 ultralytics
 gunicorn
+roboflow
