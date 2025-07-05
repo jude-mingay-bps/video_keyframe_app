@@ -14,7 +14,7 @@ from io import BytesIO
 from PIL import Image
 import numpy as np
 import requests
-from moviepy import VideoFileClip
+from moviepy.video.io.VideoFileClip import VideoFileClip
 import glob
 from ultralytics import YOLO
 
@@ -156,7 +156,6 @@ def draw_annotations_on_frame(frame_base64, annotations):
             confidence = ann['confidence']
             class_name = ann['class_name']
             
-            # Choose color based on class_id
             colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0), 
                      (255, 0, 255), (0, 255, 255), (128, 0, 128), (255, 165, 0)]
             color = colors[ann['class_id'] % len(colors)]
@@ -164,18 +163,21 @@ def draw_annotations_on_frame(frame_base64, annotations):
             # Draw bounding box
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
             
-            # Draw label
+            # --- CORRECTED LABEL DRAWING LOGIC ---
             label = f"{class_name}: {confidence:.2f}"
-            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+            (label_width, label_height), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
             
-            # Draw label background
-            cv2.rectangle(frame, (x1, y1 - label_size[1] - 10), 
-                         (x1 + label_size[0], y1), color, -1)
+            # Calculate centered position
+            box_center_x = x1 + (x2 - x1) // 2
+            label_x_start = box_center_x - (label_width // 2)
+            label_x_start = max(label_x_start, 0) # Prevent going off-screen left
             
-            # Draw label text
-            cv2.putText(frame, label, (x1, y1 - 5), 
+            # Draw label background and text
+            cv2.rectangle(frame, (label_x_start - 2, y1 - label_height - 10), 
+                         (label_x_start + label_width + 2, y1), color, -1)
+            cv2.putText(frame, label, (label_x_start, y1 - 5), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-        
+                       
         # Encode back to base64
         _, buffer = cv2.imencode('.jpg', frame)
         annotated_base64 = base64.b64encode(buffer).decode('utf-8')
@@ -185,7 +187,6 @@ def draw_annotations_on_frame(frame_base64, annotations):
     except Exception as e:
         print(f"Error drawing annotations: {e}")
         return None
-
 def create_yolo_annotation_file(annotations, image_width, image_height):
     """Create YOLO format annotation text"""
     lines = []
@@ -219,7 +220,7 @@ def download_youtube_video(url, output_path):
         print(f"Error downloading YouTube video: {e}")
         return False, str(e)
 
-def extract_frames(video_path, start_time, duration=30, target_fps=30):
+def extract_frames(video_path, start_time, duration=30, target_fps=10):
     """Extract frames from video at specified fps using moviepy."""
     try:
         with VideoFileClip(video_path) as video:
@@ -233,7 +234,9 @@ def extract_frames(video_path, start_time, duration=30, target_fps=30):
                 frame_array = video.get_frame(current_time)
                 frame_bgr = cv2.cvtColor(frame_array, cv2.COLOR_RGB2BGR)
                 
-                _, buffer = cv2.imencode('.jpg', frame_bgr)
+                # Reduce JPEG quality for faster loading
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 85]
+                _, buffer = cv2.imencode('.jpg', frame_bgr, encode_param)
                 frame_base64 = base64.b64encode(buffer).decode('utf-8')
                 
                 frame_num = int(current_time * video.fps)
@@ -574,7 +577,7 @@ def get_model_info():
 
 @app.route('/predict_frame', methods=['POST'])
 def predict_frame():
-    """Run YOLO prediction on a single frame and return annotated image"""
+    """Run YOLO prediction on a single frame and return data, not a drawn image."""
     data = request.json
     frame_data = data.get('frame_data')
     confidence = data.get('confidence', 0.25)
@@ -582,18 +585,17 @@ def predict_frame():
     if not frame_data:
         return jsonify({'success': False, 'error': 'No frame data provided'})
     
+    # Get annotations but do NOT draw them on the frame here
     annotations, message = predict_on_frame(frame_data, confidence)
     
     if annotations is None:
         return jsonify({'success': False, 'error': message})
     
-    # Draw annotations on frame
-    annotated_frame = draw_annotations_on_frame(frame_data, annotations)
-    
+    # Return the ORIGINAL frame data and the annotations separately
     return jsonify({
         'success': True,
         'annotations': annotations,
-        'annotated_frame': annotated_frame,
+        'frame_data': frame_data, # Send back the original, clean frame
         'message': message
     })
 
@@ -1397,6 +1399,9 @@ def index():
             text-align: center;
             margin: 35px 0;
             position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         .frame-display img {
@@ -1406,8 +1411,28 @@ def index():
             border-radius: 20px;
             transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
             box-shadow: 0 16px 50px rgba(0, 0, 0, 0.12);
+            display: block;
+            position: relative;
         }
 
+        
+
+
+        #target-fps {
+            width: 150px;
+        }
+
+        #fps-value {
+            min-width: 30px;
+            text-align: center;
+            font-weight: 700;
+            color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
         .frame-display img.selected {
             border-color: #27ae60;
             box-shadow: 0 0 40px rgba(39, 174, 96, 0.5), 0 20px 60px rgba(0, 0, 0, 0.15);
@@ -1789,6 +1814,104 @@ def index():
             100% { transform: rotate(360deg); }
         }
 
+    
+        .bbox-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .bbox-item {
+            position: absolute;
+            border: 2px solid;
+            cursor: pointer;
+            pointer-events: auto;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+            /* Remove min-width and min-height to allow proper rectangles */
+        }
+
+        .bbox-item:hover {
+            border-width: 3px; /* Changed from 4px to 3px for a subtler hover */
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        }
+
+        .bbox-item.misclassified {
+            border-color: #ff0000 !important;
+            border-width: 4px !important;
+            box-shadow: 0 0 15px rgba(255, 0, 0, 0.5) !important;
+            animation: pulse-red 1.5s ease-in-out infinite;
+        }
+
+        .bbox-label {
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: none;
+            margin-bottom: 2px;
+        }
+
+        .bbox-item.misclassified .bbox-label {
+            background: #ff0000;
+            animation: pulse-label 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse-label {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+
+        /* Other class styling in annotation list */
+        .annotation-item.other-class {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            animation: pulse-other 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-other {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.8; }
+        }
+
+        /* Correction controls */
+        .correction-controls {
+            background: linear-gradient(135deg, rgba(231, 76, 60, 0.1), rgba(192, 57, 43, 0.1));
+            padding: 20px;
+            border-radius: 12px;
+            margin: 15px 0;
+            border: 2px solid rgba(231, 76, 60, 0.2);
+            display: none;
+        }
+
+        .correction-controls.active {
+            display: block;
+        }
+
+        .correction-controls h4 {
+            color: #e74c3c;
+            margin-bottom: 10px;
+            font-size: 1.1em;
+        }
+
+        .correction-controls button {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            margin: 5px;
+            padding: 8px 16px;
+            font-size: 14px;
+            min-width: auto;
+        }
+
         /* Responsive Design */
         @media (max-width: 768px) {
             .container {
@@ -1872,12 +1995,19 @@ def index():
                 width: 12px;
             }
         }
+        
+        
     </style>
 </head>
 <body>
     <div class="toast-container" id="toast-container"></div>
     
     <div class="container">
+        <header>
+            <h1>Video Frame Labeling Tool</h1>
+            <p class="subtitle">With YOLO Predictions & Roboflow Integration</p>
+        </header>
+
         <div class="yolo-section">
             <h2>YOLO Model Configuration <span id="yolo-status" class="yolo-status disconnected">Loading...</span></h2>
             
@@ -1986,6 +2116,9 @@ def index():
                     <input type="number" id="start-time" min="0" value="0" step="0.1">
                     <label>Duration:</label>
                     <input type="number" id="duration" min="1" max="60" value="30" step="1">
+                    <label>FPS:</label>
+                    <input type="range" id="target-fps" min="1" max="30" value="10" step="1">
+                    <span class="range-value" id="fps-value">10</span>
                     <button onclick="updateSegmentFromInputs()">Update</button>
                     <button onclick="loadSegment()">Load Frames</button>
                 </div>
@@ -2012,14 +2145,22 @@ def index():
                         </div>
                 </div>
                 
+                <div class="correction-controls" id="correction-controls">
+                    <h4>🔧 Correction Mode</h4>
+                    <p>Click on misclassified objects to mark them as "Other"</p>
+                    <button onclick="clearAllCorrections()">Clear All Corrections</button>
+                    <button onclick="toggleCorrectionMode()">Exit Correction Mode</button>
+                </div>
+
                 <div class="frame-display">
                     <img id="frame-image" src="" alt="Video frame">
+                    <div class="bbox-overlay" id="bbox-overlay"></div>
                 </div>
                 
                 <div class="frame-controls">
                     <button onclick="previousFrame()">← Previous</button>
                     <button onclick="toggleSelection()">Toggle Selection</button>
-                    <button onclick="runPrediction()" class="yolo-btn" id="predict-btn">Run Prediction</button>
+                    <button onclick="toggleCorrectionMode()" class="roboflow-btn" id="correction-btn" style="display: none;">🔧 Correct Labels</button>
                     <button onclick="nextFrame()">Next →</button>
                 </div>
                 
@@ -2057,12 +2198,22 @@ def index():
             split: 'train',
             isConfigured: false
         };
+
+        // --- NEW --- Interactive bounding box state
+        let correctionMode = false;
+        let currentBoundingBoxes = [];
+        let correctedAnnotations = new Map(); // Store corrections per frame
         
         // Initialize confidence threshold slider
         document.getElementById('confidence-threshold').addEventListener('input', (e) => {
             document.getElementById('confidence-value').textContent = e.target.value;
         });
         
+        // Add this after the confidence threshold slider initialization
+        document.getElementById('target-fps').addEventListener('input', (e) => {
+            document.getElementById('fps-value').textContent = e.target.value;
+        });
+                
         // Toast Notification System
         function showToast(message, type = 'info', duration = 5000, showProgress = false) {
             const toastContainer = document.getElementById('toast-container');
@@ -2117,7 +2268,7 @@ def index():
                 button.disabled = true;
                 button.classList.add('button-loading');
                 button.dataset.originalText = button.textContent;
-                button.textContent = 'Loading...';
+                button.textContent = '';
             } else {
                 button.disabled = false;
                 button.classList.remove('button-loading');
@@ -2193,13 +2344,16 @@ def index():
             
             if (predictionMode) {
                 toggle.classList.add('active');
+                showToast('Automatic predictions enabled.', 'info', 3000);
+                // --- FIX ---
+                // Immediately run a prediction on the current frame when the toggle is enabled.
+                runPrediction();
             } else {
                 toggle.classList.remove('active');
+                showToast('Automatic predictions disabled.', 'info', 3000);
             }
-            
-            // Update predict button visibility
-            updatePredictButtonVisibility();
         }
+
         
         function updatePredictButtonVisibility() {
             const predictBtn = document.getElementById('predict-btn');
@@ -2211,13 +2365,22 @@ def index():
         }
         
         async function runPrediction() {
+            // --- FIX ---
+            // First, check if a prediction already exists for this frame. If so, do nothing.
+            if (framePredictions.has(currentFrameIndex)) {
+                // Just make sure the display is up-to-date with the existing prediction.
+                updateFrameDisplay();
+                return;
+            }
+
+            // Original guard clause to ensure predictions are wanted and possible.
             if (!predictionMode || !modelInfo || !frames.length) {
-                showToast('YOLO predictions not available', 'warning');
                 return;
             }
             
-            const button = document.getElementById('predict-btn');
-            setButtonLoading(button, true);
+            // This part remains the same, executing the prediction via fetch.
+            const button = document.getElementById('predict-btn'); // Note: This button is hidden but we can keep the logic
+            if(button) setButtonLoading(button, true); // Safely handle if button exists
             
             try {
                 const currentFrame = frames[currentFrameIndex];
@@ -2225,9 +2388,7 @@ def index():
                 
                 const response = await fetch('/predict_frame', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         frame_data: currentFrame.data,
                         confidence: confidence
@@ -2237,37 +2398,219 @@ def index():
                 const data = await response.json();
                 
                 if (data.success) {
-                    // Store predictions for this frame
                     framePredictions.set(currentFrameIndex, {
                         annotations: data.annotations,
-                        annotated_frame: data.annotated_frame
+                        frame_data: data.frame_data
                     });
                     
-                    // Update the display to show the annotated frame
-                    updateFrameDisplay();
-                    showAnnotations(data.annotations);
-                    showToast(`Found ${data.annotations.length} detections`, 'success');
+                    updateFrameDisplay(); 
+                    
+                    if (data.annotations.length > 0) {
+                        const correctionBtn = document.getElementById('correction-btn');
+                        if(correctionBtn) correctionBtn.style.display = 'block';
+                    }
                 } else {
                     showToast('Prediction failed: ' + data.error, 'error');
                 }
             } catch (error) {
                 showToast('Error running prediction: ' + error.message, 'error');
             } finally {
-                setButtonLoading(button, false);
+                if(button) setButtonLoading(button, false);
             }
         }
         
-        function showAnnotations(annotations) {
-            const annotationInfo = document.getElementById('annotation-info');
-            const annotationList = document.getElementById('annotation-list');
+        function hideAnnotations() {
+            document.getElementById('annotation-info').classList.remove('active');
+            document.getElementById('correction-controls').classList.remove('active');
+            if (correctionMode) {
+                toggleCorrectionMode(); // Exit correction mode if annotations are hidden
+            }
+        }
+        
+        // --- NEW/MODIFIED --- Interactive bounding box and annotation display functions
+        
+        function toggleCorrectionMode() {
+            correctionMode = !correctionMode;
+            const controls = document.getElementById('correction-controls');
             
-            if (annotations.length > 0) {
-                annotationList.innerHTML = annotations.map(ann => `
-                    <div class="annotation-item">
-                        <span>${ann.class_name}</span>
-                        <span class="annotation-confidence">${(ann.confidence * 100).toFixed(1)}%</span>
-                    </div>
-                `).join('');
+            if (correctionMode) {
+                controls.classList.add('active');
+                updateBoundingBoxDisplay();
+            } else {
+                controls.classList.remove('active');
+                clearBoundingBoxDisplay();
+            }
+        }
+
+        function createInteractiveBoundingBoxes(annotations, imageElement) {
+            clearBoundingBoxDisplay();
+            if (!annotations || !annotations.length) return;
+
+            const overlay = document.getElementById('bbox-overlay');
+            
+            // Wait for image to be fully loaded
+            if (!imageElement.complete || !imageElement.naturalHeight) {
+                imageElement.onload = () => createInteractiveBoundingBoxes(annotations, imageElement);
+                return;
+            }
+
+            // Get image position relative to its container
+            const container = imageElement.parentElement;
+            const containerRect = container.getBoundingClientRect();
+            const imgRect = imageElement.getBoundingClientRect();
+            
+            // Calculate offset of image within container
+            const offsetX = imgRect.left - containerRect.left;
+            const offsetY = imgRect.top - containerRect.top;
+
+            // Get the actual displayed size of the image
+            const displayWidth = imageElement.offsetWidth;
+            const displayHeight = imageElement.offsetHeight;
+            const naturalWidth = imageElement.naturalWidth;
+            const naturalHeight = imageElement.naturalHeight;
+
+            // Calculate scale factors
+            const scaleX = displayWidth / naturalWidth;
+            const scaleY = displayHeight / naturalHeight;
+
+            // Position and size overlay to match image exactly
+            overlay.style.width = displayWidth + 'px';
+            overlay.style.height = displayHeight + 'px';
+            overlay.style.position = 'absolute';
+            overlay.style.top = offsetY + 'px';
+            overlay.style.left = offsetX + 'px';
+
+            annotations.forEach((annotation, index) => {
+                const [x1, y1, x2, y2] = annotation.bbox_xyxy;
+                
+                // Scale coordinates to match displayed image size
+                const left = x1 * scaleX;
+                const top = y1 * scaleY;
+                const width = (x2 - x1) * scaleX;
+                const height = (y2 - y1) * scaleY;
+
+                const bbox = document.createElement('div');
+                bbox.className = 'bbox-item';
+                bbox.style.left = `${left}px`;
+                bbox.style.top = `${top}px`;
+                bbox.style.width = `${width}px`;
+                bbox.style.height = `${height}px`;
+                bbox.style.position = 'absolute';
+
+                // Check if this annotation has been corrected
+                const frameKey = `${currentVideoId}_${currentFrameIndex}`;
+                const corrections = correctedAnnotations.get(frameKey) || new Set();
+                const isCorrected = corrections.has(index);
+                
+                // Create label
+                const label = document.createElement('div');
+                label.className = 'bbox-label';
+                
+                if (isCorrected) {
+                    bbox.classList.add('misclassified');
+                    label.textContent = 'Other';
+                } else {
+                    // Set color based on class
+                    const colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#34495e', '#e67e22'];
+                    bbox.style.borderColor = colors[annotation.class_id % colors.length];
+                    label.textContent = `${annotation.class_name}: ${(annotation.confidence * 100).toFixed(1)}%`;
+                }
+                
+                bbox.appendChild(label);
+                
+                // Add click handler if in correction mode
+                if (correctionMode) {
+                    bbox.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        toggleAnnotationCorrection(index);
+                    });
+                }
+                
+                overlay.appendChild(bbox);
+                currentBoundingBoxes.push({ element: bbox, annotation: annotation, index: index, corrected: isCorrected });
+            });
+        }
+
+
+        function toggleAnnotationCorrection(annotationIndex) {
+            const frameKey = `${currentVideoId}_${currentFrameIndex}`;
+            if (!correctedAnnotations.has(frameKey)) {
+                correctedAnnotations.set(frameKey, new Set());
+            }
+            
+            const corrections = correctedAnnotations.get(frameKey);
+            const bbox = currentBoundingBoxes.find(b => b.index === annotationIndex);
+            if (!bbox) return;
+            
+            if (corrections.has(annotationIndex)) {
+                corrections.delete(annotationIndex);
+            } else {
+                corrections.add(annotationIndex);
+            }
+            
+            updateAnnotationDisplay();
+            updateBoundingBoxDisplay(); // Redraw with new state
+        }
+
+        function clearAllCorrections() {
+            const frameKey = `${currentVideoId}_${currentFrameIndex}`;
+            correctedAnnotations.delete(frameKey);
+            updateAnnotationDisplay();
+            updateBoundingBoxDisplay();
+        }
+
+        function clearBoundingBoxDisplay() {
+            const overlay = document.getElementById('bbox-overlay');
+            overlay.innerHTML = '';
+            currentBoundingBoxes = [];
+        }
+
+        function updateBoundingBoxDisplay() {
+            if (!correctionMode) {
+                clearBoundingBoxDisplay();
+                return;
+            };
+            
+            const img = document.getElementById('frame-image');
+            if (img.src && framePredictions.has(currentFrameIndex)) {
+                const prediction = framePredictions.get(currentFrameIndex);
+                if (img.complete) {
+                    createInteractiveBoundingBoxes(prediction.annotations, img);
+                } else {
+                    img.onload = () => createInteractiveBoundingBoxes(prediction.annotations, img);
+                }
+            } else {
+                clearBoundingBoxDisplay();
+            }
+        }
+        
+        function updateAnnotationDisplay() {
+            if (!framePredictions.has(currentFrameIndex)) {
+                hideAnnotations();
+                return;
+            }
+
+            const prediction = framePredictions.get(currentFrameIndex);
+            const annotations = prediction.annotations;
+            const frameKey = `${currentVideoId}_${currentFrameIndex}`;
+            const corrections = correctedAnnotations.get(frameKey) || new Set();
+            
+            const annotationList = document.getElementById('annotation-list');
+            const annotationInfo = document.getElementById('annotation-info');
+
+            if (annotations && annotations.length > 0) {
+                annotationList.innerHTML = annotations.map((ann, index) => {
+                    const isCorrected = corrections.has(index);
+                    const itemClass = isCorrected ? 'annotation-item other-class' : 'annotation-item';
+                    const displayName = isCorrected ? 'Other' : ann.class_name;
+                    const confidence = isCorrected ? '100.0' : (ann.confidence * 100).toFixed(1);
+                    
+                    return `
+                        <div class="${itemClass}">
+                            <span>${displayName}</span>
+                            <span class="annotation-confidence">${confidence}%</span>
+                        </div>`;
+                }).join('');
                 annotationInfo.classList.add('active');
             } else {
                 annotationList.innerHTML = '<div class="annotation-item">No detections found</div>';
@@ -2275,30 +2618,32 @@ def index():
             }
         }
         
-        function hideAnnotations() {
-            const annotationInfo = document.getElementById('annotation-info');
-            annotationInfo.classList.remove('active');
-        }
-        
         function updateFrameDisplay() {
             if (!frames.length) return;
-            
-            const frame = frames[currentFrameIndex];
+
             const img = document.getElementById('frame-image');
             
-            // Show annotated frame if predictions exist, otherwise show original
-            if (framePredictions.has(currentFrameIndex)) {
-                const prediction = framePredictions.get(currentFrameIndex);
-                img.src = `data:image/jpeg;base64,${prediction.annotated_frame}`;
+            // --- FIX ---
+            // Cancel any previous onload events to prevent old annotations from being redrawn on the new frame.
+            img.onload = null; 
+            
+            const prediction = framePredictions.get(currentFrameIndex);
+            const frameSource = prediction ? prediction.frame_data : frames[currentFrameIndex].data;
+            img.src = `data:image/jpeg;base64,${frameSource}`;
+            
+            clearBoundingBoxDisplay();
+
+            if (prediction) {
                 img.classList.add('predicted');
-                showAnnotations(prediction.annotations);
+                updateAnnotationDisplay();
+                // Set the onload event for the CURRENT frame.
+                img.onload = () => createInteractiveBoundingBoxes(prediction.annotations, img);
+                if(img.complete) img.onload();
             } else {
-                img.src = `data:image/jpeg;base64,${frame.data}`;
                 img.classList.remove('predicted');
                 hideAnnotations();
             }
             
-            // Update selection styling
             if (selectedFrames.has(currentFrameIndex)) {
                 img.classList.add('selected');
             } else {
@@ -2306,6 +2651,8 @@ def index():
             }
         }
         
+        // --- END NEW/MODIFIED ---
+
         // Load Roboflow config from localStorage
         function loadRoboflowConfig() {
             const saved = localStorage.getItem('roboflowConfig');
@@ -2669,6 +3016,7 @@ def index():
             document.getElementById('video-list').style.display = 'none';
             document.querySelector('.roboflow-section').style.display = 'none';
             document.querySelector('.yolo-section').style.display = 'none';
+            document.querySelector('header').style.display = 'none';
             
             videoDuration = 0;
             
@@ -2689,6 +3037,7 @@ def index():
             currentFrameIndex = 0;
             selectedFrames.clear();
             framePredictions.clear();
+            // Do NOT clear correctedAnnotations here, so corrections persist if user goes back
             document.getElementById('frame-viewer').style.display = 'none';
             hideAnnotations();
             
@@ -2747,16 +3096,22 @@ def index():
             document.getElementById('frame-viewer').style.display = 'none';
             hideAnnotations();
             
+            const targetFps = parseInt(document.getElementById('target-fps').value);
+            
+            // Show estimated frame count
+            const estimatedFrames = Math.floor(segmentDuration * targetFps);
+            const loadingText = document.querySelector('#loading p');
+            loadingText.textContent = `Loading ~${estimatedFrames} frames at ${targetFps} FPS...`;
+            
             try {
                 const response = await fetch('/extract_frames', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         video_id: currentVideoId,
                         start_time: segmentStart,
-                        duration: segmentDuration
+                        duration: segmentDuration,
+                        target_fps: targetFps  // Add this parameter
                     })
                 });
                 
@@ -2768,8 +3123,13 @@ def index():
                     framePredictions.clear();
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('frame-viewer').style.display = 'block';
-                    displayFrame();
-                    showToast(`Loaded ${frames.length} frames successfully`, 'success');
+                    updateFrameDisplay();
+                    showToast(`Loaded ${frames.length} frames at ${targetFps} FPS`, 'success');
+
+                    // Automatically run prediction on the first frame if the mode is active
+                    if (predictionMode) {
+                        runPrediction();
+                    }
                 } else {
                     showToast(data.error || 'Failed to extract frames', 'error');
                     document.getElementById('loading').style.display = 'none';
@@ -2779,13 +3139,13 @@ def index():
                 document.getElementById('loading').style.display = 'none';
             }
         }
+
         
         function displayFrame() {
             if (!frames.length) return;
             
             const frame = frames[currentFrameIndex];
             
-            // Update frame display with annotations if available
             updateFrameDisplay();
             
             const info = document.getElementById('frame-info');
@@ -2806,14 +3166,22 @@ def index():
         function previousFrame() {
             if (currentFrameIndex > 0) {
                 currentFrameIndex--;
-                displayFrame();
+                updateFrameDisplay();
+                // Automatically run prediction on the new frame if the mode is active
+                if (predictionMode) {
+                    runPrediction();
+                }
             }
         }
-        
+
         function nextFrame() {
             if (currentFrameIndex < frames.length - 1) {
                 currentFrameIndex++;
-                displayFrame();
+                updateFrameDisplay();
+                // Automatically run prediction on the new frame if the mode is active
+                if (predictionMode) {
+                    runPrediction();
+                }
             }
         }
         
@@ -2847,24 +3215,37 @@ def index():
                     split: document.getElementById('roboflow-split').value
                 };
 
-                // Prepare frame data with predictions - FIXED VERSION
+                // --- MODIFIED to include corrections ---
                 const selectedFrameData = Array.from(selectedFrames).map(frameIndex => {
                     const frameData = {
                         ...frames[frameIndex],
                         frameIndex: frameIndex
                     };
                     
-                    // Add prediction data if available - ensure proper structure
                     if (framePredictions.has(frameIndex)) {
                         const prediction = framePredictions.get(frameIndex);
+                        const frameKey = `${currentVideoId}_${frameIndex}`;
+                        const corrections = correctedAnnotations.get(frameKey) || new Set();
+                        
+                        const correctedAnnotationsList = prediction.annotations.map((ann, index) => {
+                            if (corrections.has(index)) {
+                                return {
+                                    ...ann,
+                                    class_name: 'Other',
+                                    class_id: 999, // Special ID for "Other"
+                                    confidence: 1.0,
+                                    was_corrected: true
+                                };
+                            }
+                            return ann;
+                        });
+                        
                         frameData.predictions = {
-                            annotations: prediction.annotations || [],
+                            annotations: correctedAnnotationsList,
                             annotated_frame: prediction.annotated_frame || null
                         };
-                        console.log(`Frame ${frameIndex} has ${prediction.annotations.length} annotations`);
                     } else {
                         frameData.predictions = null;
-                        console.log(`Frame ${frameIndex} has no predictions`);
                     }
                     
                     return frameData;
@@ -2878,8 +3259,7 @@ def index():
                         },
                         body: JSON.stringify({
                             video_id: currentVideoId,
-                            selected_indices: Array.from(selectedFrames),
-                            frames: selectedFrameData,
+                            frames: selectedFrameData, // Send modified data
                             upload_to_roboflow: uploadToRoboflow,
                             roboflow_config: uploadToRoboflow ? finalRoboflowConfig : null
                         })
@@ -2889,28 +3269,18 @@ def index():
                     removeToast(uploadToast);
                     
                     if (data.success) {
-                        let message = `Saved ${selectedFrames.size} frames to ${data.output_dir}`;
+                        let message = `Saved ${data.frame_count} frames to ${data.output_dir}`;
                         let toastType = 'success';
                         
                         if (data.roboflow_results) {
                             const uploaded = data.roboflow_results.filter(r => r.success).length;
                             const failed = data.roboflow_results.filter(r => !r.success).length;
-                            const withAnnotations = data.roboflow_results.filter(r => r.with_annotations).length;
-                            
-                            console.log('Roboflow upload results:', data.roboflow_results);
                             
                             if (failed > 0) {
                                 message += `. Roboflow: ${uploaded} uploaded, ${failed} failed`;
                                 toastType = 'warning';
-                                
-                                // Show details of failed uploads
-                                const failedFrames = data.roboflow_results.filter(r => !r.success);
-                                console.error('Failed uploads:', failedFrames);
                             } else {
-                                message += `. All ${uploaded} frames uploaded to Roboflow successfully`;
-                                if (withAnnotations > 0) {
-                                    message += ` (${withAnnotations} with YOLO annotations)`;
-                                }
+                                message += `. All ${uploaded} frames uploaded to Roboflow.`;
                             }
                         }
                         
@@ -2933,18 +3303,17 @@ def index():
             document.querySelector('.upload-section').style.display = 'block';
             document.querySelector('.roboflow-section').style.display = 'block';
             document.querySelector('.yolo-section').style.display = 'block';
+            document.querySelector('header').style.display = 'block';
             if (videos.length > 0) {
                 document.getElementById('video-list').style.display = 'block';
             }
         }
 
         function resetInterface() {
-            document.querySelector('.frame-selector').style.display = 'none';
-            document.querySelector('.upload-section').style.display = 'block';
-            document.querySelector('.roboflow-section').style.display = 'block';
-            document.querySelector('.yolo-section').style.display = 'block';
+            showMainMenu();
             videos = [];
             updateVideoList();
+            correctedAnnotations.clear();
         }
     </script>
 </body>
@@ -3048,6 +3417,7 @@ def extract_frames_endpoint():
     video_id = data.get('video_id')
     start_time = data.get('start_time', 0)
     duration = data.get('duration', 30)
+    target_fps = data.get('target_fps', 10)  # Default to 10 FPS
     
     if not video_id or 'videos' not in session or video_id not in session['videos']:
         return jsonify({'success': False, 'error': 'Video not found'})
@@ -3055,12 +3425,14 @@ def extract_frames_endpoint():
     video_info = session['videos'][video_id]
     video_path = video_info['path']
     
-    frames = extract_frames(video_path, start_time, duration)
+    frames = extract_frames(video_path, start_time, duration, target_fps)
     
     if frames:
         return jsonify({
             'success': True,
-            'frames': frames
+            'frames': frames,
+            'fps': target_fps,
+            'frame_count': len(frames)
         })
     else:
         return jsonify({'success': False, 'error': 'Failed to extract frames'})
@@ -3096,7 +3468,10 @@ def save_frames():
     if not video_id or 'videos' not in session or video_id not in session['videos']:
         return jsonify({'success': False, 'error': 'Video not found'})
 
-    model, model_info = load_yolo_model()
+    _ , model_info_loaded = load_yolo_model()
+    # Make a copy to avoid modifying the global model_info
+    label_map_for_upload = model_info_loaded['classes'].copy() if model_info_loaded else {}
+
 
     video_info = session['videos'][video_id]
     video_name_raw = os.path.splitext(video_info['name'])[0]
@@ -3107,6 +3482,16 @@ def save_frames():
     
     roboflow_results = []
     
+    # Check if any corrections were made to add "Other" to the label map
+    has_corrections = any(
+        'predictions' in fd and fd['predictions'] and any(
+            ann.get('was_corrected') for ann in fd['predictions'].get('annotations', [])
+        ) for fd in frames_data
+    )
+    if has_corrections:
+        label_map_for_upload[999] = 'Other'
+
+
     for i, frame_data in enumerate(frames_data):
         frame_index = frame_data.get('frameIndex', i)
         
@@ -3139,7 +3524,6 @@ def save_frames():
         if upload_to_roboflow and roboflow_config.get('apiKey') and roboflow_config.get('url'):
             image_name_for_upload = f'{image_base_name}.jpg'
             
-            # Create the batch name with the requested suffix
             base_batch_name = roboflow_config.get('batchName') or video_name_raw
             batch_name_for_upload = f"{base_batch_name} (Auto labeled Please review)"
             
@@ -3153,8 +3537,7 @@ def save_frames():
                 split=split,
                 batch_name=batch_name_for_upload,
                 annotation_data=annotation_data,
-                # Pass the model's class map to the upload function
-                label_map=model_info['classes'] if model_info else None
+                label_map=label_map_for_upload
             )
             
             roboflow_results.append({
