@@ -1,0 +1,138 @@
+.annotation-info {
+    background: linear-gradient(135deg, rgba(39, 174, 96, 0.1), rgba(22, 160, 133, 0.1));
+    padding: 15px 20px;
+    border-radius: 12px;
+    margin: 15px 0;
+    border: 2px solid rgba(39, 174, 96, 0.2);
+    display: none;
+}
+
+.annotation-info.active {
+    display: block;
+}
+
+.annotation-info h4 {
+    color: #27ae60;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+}
+
+.annotation-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.annotation-item {
+    background: linear-gradient(135deg, #27ae60, #16a085);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.annotation-confidence {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 11px;
+}
+
+.bbox-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.bbox-item {
+    position: absolute;
+    border: 2px solid;
+    cursor: pointer;
+    pointer-events: auto;
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.bbox-item:hover {
+    border-width: 3px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+}
+
+.bbox-item.misclassified {
+    border-color: #ff0000 !important;
+    border-width: 4px !important;
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.5) !important;
+    animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+.bbox-label {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+    pointer-events: none;
+    margin-bottom: 2px;
+}
+
+.bbox-item.misclassified .bbox-label {
+    background: #ff0000;
+    animation: pulse-label 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-label {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+}
+
+.annotation-item.other-class {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    animation: pulse-other 2s ease-in-out infinite;
+}
+
+@keyframes pulse-other {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+}
+
+.correction-controls {
+    background: linear-gradient(135deg, rgba(231, 76, 60, 0.1), rgba(192, 57, 43, 0.1));
+    padding: 20px;
+    border-radius: 12px;
+    margin: 15px 0;
+    border: 2px solid rgba(231, 76, 60, 0.2);
+    display: none;
+}
+
+.correction-controls.active {
+    display: block;
+}
+
+.correction-controls h4 {
+    color: #e74c3c;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+}
+
+.correction-controls button {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    margin: 5px;
+    padding: 8px 16px;
+    font-size: 14px;
+    min-width: auto;
+}
