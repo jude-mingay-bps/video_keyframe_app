@@ -1,14 +1,12 @@
 .annotation-info {
-    background: linear-gradient(135deg, rgba(39, 174, 96, 0.1), rgba(22, 160, 133, 0.1));
-    padding: 10px 15px;
-    border-radius: 10px;
-    margin: 10px 0;
-    border: 2px solid rgba(39, 174, 96, 0.2);
-    min-height: 60px;
+    background: #f9f9f9;
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    margin: 1rem 0;
+    border: 1px solid var(--border-color);
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.2s ease, visibility 0.2s ease;
-    transform: translateY(0);
+    transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
 .annotation-info.active {
@@ -17,35 +15,35 @@
 }
 
 .annotation-info h4 {
-    color: #27ae60;
-    margin-bottom: 8px;
-    font-size: 1em;
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
 }
 
 .annotation-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 10px;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
 }
 
 .annotation-item {
-    background: linear-gradient(135deg, #27ae60, #16a085);
+    background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
     color: white;
-    padding: 6px 12px;
+    padding: 0.4rem 0.8rem;
     border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 0.8rem;
+    font-weight: 500;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 0.5rem;
 }
 
 .annotation-confidence {
     background: rgba(255, 255, 255, 0.2);
-    padding: 2px 6px;
+    padding: 0.2rem 0.4rem;
     border-radius: 10px;
-    font-size: 11px;
+    font-size: 0.7rem;
 }
 
 .bbox-overlay {
@@ -56,93 +54,56 @@
     bottom: 0;
     pointer-events: none;
     z-index: 10;
-    transition: opacity 0.2s ease;
 }
 
 .bbox-item {
     position: absolute;
-    border: 2px solid;
+    border: 2px solid var(--primary-color);
     cursor: pointer;
     pointer-events: auto;
     border-radius: 4px;
     transition: all 0.3s ease;
-    animation: fadeIn 0.2s ease;
-    background-color: rgba(255, 255, 255, 0.1);
-}
-
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: scale(0.95);
-    }
-    to {
-        opacity: 0.85;
-        transform: scale(1);
-    }
+    background-color: rgba(106, 17, 203, 0.1);
 }
 
 .bbox-item:hover {
     border-width: 3px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-    opacity: 1;
-    background-color: rgba(255, 255, 255, 0.15);
+    background-color: rgba(106, 17, 203, 0.2);
 }
 
 .bbox-item.misclassified {
-    border-color: rgba(255, 0, 0, 0.9) !important;
-    border-width: 3px !important;
-    box-shadow: 0 0 15px rgba(255, 0, 0, 0.3) !important;
-    animation: pulse-red 1.5s ease-in-out infinite;
-    background-color: rgba(255, 0, 0, 0.1) !important;
+    border-color: var(--error-color) !important;
+    background-color: rgba(231, 76, 60, 0.1) !important;
 }
 
 .bbox-label {
     position: absolute;
     bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.7);
-    color: rgba(255, 255, 255, 0.95);
+    left: 0;
+    background: var(--primary-color);
+    color: white;
     padding: 2px 8px;
     border-radius: 4px;
-    font-size: 11px;
-    font-weight: 600;
+    font-size: 0.7rem;
+    font-weight: 500;
     white-space: nowrap;
-    pointer-events: none;
     margin-bottom: 2px;
-    backdrop-filter: blur(4px);
 }
 
 .bbox-item.misclassified .bbox-label {
-    background: rgba(255, 0, 0, 0.8);
-    animation: pulse-label 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse-label {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-}
-
-.annotation-item.other-class {
-    background: linear-gradient(135deg, #e74c3c, #c0392b);
-    animation: pulse-other 2s ease-in-out infinite;
-}
-
-@keyframes pulse-other {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.8; }
+    background: var(--error-color);
 }
 
 .correction-controls {
-    background: linear-gradient(135deg, rgba(231, 76, 60, 0.1), rgba(192, 57, 43, 0.1));
-    padding: 15px;
-    border-radius: 10px;
-    margin: 10px 0;
-    border: 2px solid rgba(231, 76, 60, 0.2);
-    min-height: 90px;
+    background: #fff5f5;
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    margin: 1rem 0;
+    border: 1px solid var(--error-color);
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.2s ease, visibility 0.2s ease;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
 .correction-controls.active {
@@ -151,15 +112,14 @@
 }
 
 .correction-controls h4 {
-    color: #e74c3c;
-    margin-bottom: 10px;
-    font-size: 1.1em;
+    color: var(--error-color);
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
 }
 
 .correction-controls button {
-    background: linear-gradient(135deg, #e74c3c, #c0392b);
-    margin: 5px;
-    padding: 8px 16px;
-    font-size: 14px;
-    min-width: auto;
+    background: linear-gradient(45deg, var(--error-color), #c0392b);
+    margin: 0.5rem 0;
+    padding: 0.6rem 1.2rem;
+    font-size: 0.9rem;
 }

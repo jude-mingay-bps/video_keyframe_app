@@ -145,6 +145,10 @@ function previousFrame() {
         if (predictionMode) {
             runPrediction();
         }
+        // Update pose annotations if in pose mode
+        if (typeof updatePoseAnnotationsOnFrameChange === 'function') {
+            updatePoseAnnotationsOnFrameChange(currentFrameIndex);
+        }
     }
 }
 
@@ -155,6 +159,10 @@ function nextFrame() {
         displayFrame();
         if (predictionMode) {
             runPrediction();
+        }
+        // Update pose annotations if in pose mode
+        if (typeof updatePoseAnnotationsOnFrameChange === 'function') {
+            updatePoseAnnotationsOnFrameChange(currentFrameIndex);
         }
     }
 }

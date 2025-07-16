@@ -1,0 +1,101 @@
+
+.yolo-pose-section {
+    background: #fffaf2;
+    border-left-color: var(--warning-color);
+}
+
+.yolo-pose-section h2 {
+    color: var(--warning-color);
+}
+
+.yolo-pose-status {
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.yolo-pose-status.connected {
+    background: var(--warning-color);
+    color: white;
+}
+
+.yolo-pose-status.disconnected {
+    background: var(--error-color);
+    color: white;
+}
+
+.yolo-pose-controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-top: 1rem;
+}
+
+#predict-yolo-pose-btn {
+    background: var(--warning-color);
+    color: white;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all 0.3s ease;
+}
+
+#predict-yolo-pose-btn:hover {
+    background: #d68910;
+    transform: translateY(-2px);
+}
+
+#predict-yolo-pose-btn.active {
+    background: #b87333;
+}
+
+#yolo-pose-canvas {
+    border: 2px solid var(--warning-color);
+    border-radius: var(--border-radius);
+    background: transparent;
+}
+
+.yolo-pose-info {
+    background: rgba(243, 156, 18, 0.05);
+    border: 1px solid var(--warning-color);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+.yolo-pose-info h4 {
+    color: var(--warning-color);
+    margin: 0 0 0.5rem 0;
+    font-size: 1rem;
+}
+
+.yolo-pose-stats {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.yolo-pose-stat {
+    background: white;
+    padding: 0.5rem 0.8rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    font-size: 0.9rem;
+}
+
+.yolo-pose-stat-label {
+    font-weight: 600;
+    color: var(--muted-text-color);
+}
+
+.yolo-pose-stat-value {
+    color: var(--warning-color);
+    font-weight: 700;
+}

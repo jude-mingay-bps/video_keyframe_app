@@ -8,18 +8,21 @@ from queue import Queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from .yolo_handler import predict_on_frame
+from .movenet_handler import predict_pose_on_frame
 import multiprocessing
 
 
 # Global cache for annotations
 frame_annotations_cache = {}
+pose_annotations_cache = {}
 annotation_lock = threading.Lock()
 
 def clear_annotations_cache():
     """Clear the annotations cache."""
-    global frame_annotations_cache
+    global frame_annotations_cache, pose_annotations_cache
     with annotation_lock:
         frame_annotations_cache.clear()
+        pose_annotations_cache.clear()
 
 def get_frame_annotations(frame_num):
     """Get annotations for a specific frame from cache."""
@@ -30,6 +33,16 @@ def set_frame_annotations(frame_num, annotations):
     """Set annotations for a specific frame in cache."""
     with annotation_lock:
         frame_annotations_cache[frame_num] = annotations
+
+def get_pose_annotations(frame_num):
+    """Get pose annotations for a specific frame from cache."""
+    with annotation_lock:
+        return pose_annotations_cache.get(frame_num)
+
+def set_pose_annotations(frame_num, annotations):
+    """Set pose annotations for a specific frame in cache."""
+    with annotation_lock:
+        pose_annotations_cache[frame_num] = annotations
 
 def process_frame_annotations(frame_data, confidence_threshold=0.25):
     """Process YOLO annotations for a single frame."""

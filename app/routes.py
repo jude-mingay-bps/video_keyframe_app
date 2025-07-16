@@ -7,7 +7,7 @@ from datetime import datetime
 from flask import jsonify, request, render_template, session, Response, current_app
 from werkzeug.utils import secure_filename
 from . import utils
-from .services import roboflow_handler, yolo_handler, video_processing
+from .services import roboflow_handler, yolo_handler, video_processing, movenet_handler
 
 from flask import Blueprint
 
@@ -28,6 +28,22 @@ def get_model_info():
     return jsonify({'success': True, 'model_info': info})
 
 
+@bp.route('/get_movenet_model_info')
+def get_movenet_model_info():
+    model, info = movenet_handler.load_movenet_model()
+    if model is None:
+        return jsonify({'success': False, 'error': 'MoveNet model not available'})
+    return jsonify({'success': True, 'model_info': info})
+
+
+@bp.route('/get_yolo_pose_model_info')
+def get_yolo_pose_model_info():
+    info = yolo_handler.get_yolo_pose_model_info()
+    if info is None:
+        return jsonify({'success': False, 'error': 'YOLO pose model not available'})
+    return jsonify({'success': True, 'model_info': info})
+
+
 @bp.route('/predict_frame', methods=['POST'])
 def predict_frame():
     data = request.json
@@ -45,6 +61,50 @@ def predict_frame():
     return jsonify({
         'success': True,
         'annotations': annotations,
+        'frame_data': frame_data,
+        'message': message
+    })
+
+
+@bp.route('/predict_pose_frame', methods=['POST'])
+def predict_pose_frame():
+    data = request.json
+    frame_data = data.get('frame_data')
+    confidence = data.get('confidence', 0.3)
+
+    if not frame_data:
+        return jsonify({'success': False, 'error': 'No frame data provided'})
+
+    pose_annotations, message = movenet_handler.predict_pose_on_frame(frame_data, confidence)
+
+    if pose_annotations is None:
+        return jsonify({'success': False, 'error': message})
+
+    return jsonify({
+        'success': True,
+        'pose_annotations': pose_annotations,
+        'frame_data': frame_data,
+        'message': message
+    })
+
+
+@bp.route('/predict_yolo_pose_frame', methods=['POST'])
+def predict_yolo_pose_frame():
+    data = request.json
+    frame_data = data.get('frame_data')
+    confidence = data.get('confidence', 0.3)
+
+    if not frame_data:
+        return jsonify({'success': False, 'error': 'No frame data provided'})
+
+    pose_annotations, message = yolo_handler.predict_pose_on_frame(frame_data, confidence)
+
+    if pose_annotations is None:
+        return jsonify({'success': False, 'error': message})
+
+    return jsonify({
+        'success': True,
+        'pose_annotations': pose_annotations,
         'frame_data': frame_data,
         'message': message
     })
@@ -73,6 +133,32 @@ def get_cached_annotations():
             'success': False,
             'cached': False,
             'message': 'No cached annotations found'
+        })
+
+
+@bp.route('/get_cached_pose_annotations', methods=['POST'])
+def get_cached_pose_annotations():
+    data = request.json
+    frame_num = data.get('frame_num')
+    
+    if frame_num is None:
+        return jsonify({'success': False, 'error': 'No frame number provided'})
+    
+    cached_result = video_processing.get_pose_annotations(frame_num)
+    
+    if cached_result is not None:
+        return jsonify({
+            'success': True,
+            'cached': True,
+            'pose_annotations': cached_result.get('pose_annotations'),
+            'message': cached_result.get('status', 'From cache'),
+            'processed': cached_result.get('processed', True)
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'cached': False,
+            'message': 'No cached pose annotations found'
         })
 
 
@@ -315,7 +401,7 @@ def save_frames():
         if frame is None:
             continue
 
-        image_base_name = f'frame_{i + 1:03d}_time_{frame_data["time"]:.1f}s'
+        image_base_name = f'video_{video_name_raw}_frame_{i + 1:03d}_time_{frame_data["time"]:.1f}s'
         image_filename_png = f'{image_base_name}.png'
         filepath = os.path.join(output_dir, image_filename_png)
         cv2.imwrite(filepath, frame)

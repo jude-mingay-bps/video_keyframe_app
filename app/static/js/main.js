@@ -26,9 +26,23 @@ let correctedAnnotations = new Map();
 window.addEventListener('load', () => {
     loadRoboflowConfig();
     loadModelInfo();
+    if (typeof loadMoveNetModelInfo === 'function') {
+        loadMoveNetModelInfo();
+    }
+    if (typeof loadYoloPoseModelInfo === 'function') {
+        loadYoloPoseModelInfo();
+    }
     initializeTimeline();
     updatePredictButtonVisibility();
     initializeEventListeners();
+
+    // Animate sections on load
+    const sections = document.querySelectorAll('.fade-in-section');
+    sections.forEach((section, index) => {
+        setTimeout(() => {
+            section.classList.add('visible');
+        }, index * 150); // Staggered delay
+    });
 });
 
 function startProcessing() {

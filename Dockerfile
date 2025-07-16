@@ -20,7 +20,11 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 6. Copy your application code into the container
-COPY app.py .
+COPY app/ ./app
+COPY run.py .
+COPY config.py .
+COPY yolo11n-pose.pt .
+
 
 # 7. Create directories for models, uploads, output, and temp files
 RUN mkdir -p models uploads output temp
@@ -29,4 +33,4 @@ RUN mkdir -p models uploads output temp
 EXPOSE 5000
 
 # 9. Define the command to run the application using Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "run:app"]

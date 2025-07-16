@@ -247,4 +247,14 @@ function updateFrameDisplay() {
     } else {
         img.classList.remove('selected');
     }
+    
+    // Update pose annotations if MoveNet is active
+    if (typeof updatePoseAnnotationsOnFrameChange === 'function') {
+        updatePoseAnnotationsOnFrameChange(currentFrameIndex);
+    }
+    
+    // Update YOLO pose annotations if YOLO pose is active
+    if (typeof updateYoloPoseAnnotationsOnFrameChange === 'function') {
+        updateYoloPoseAnnotationsOnFrameChange(currentFrameIndex);
+    }
 }

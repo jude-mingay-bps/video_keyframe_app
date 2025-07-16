@@ -1,13 +1,11 @@
 .roboflow-status {
     display: inline-flex;
     align-items: center;
-    padding: 8px 18px;
-    border-radius: 25px;
-    font-size: 14px;
-    margin-left: 16px;
-    font-weight: 700;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    gap: 8px;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    gap: 0.5rem;
 }
 
 .roboflow-status::before {
@@ -19,21 +17,28 @@
 }
 
 .roboflow-status.connected {
-    background: linear-gradient(135deg, #27ae60, #229954);
+    background: var(--success-color);
     color: white;
-    box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
 }
 
 .roboflow-status.connected::before {
-    background: #fff;
+    background: white;
 }
 
 .roboflow-status.disconnected {
-    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    background: var(--error-color);
     color: white;
-    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
 }
 
 .roboflow-status.disconnected::before {
-    background: #fff;
+    background: white;
+}
+
+@keyframes status-pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
 }

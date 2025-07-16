@@ -1,12 +1,7 @@
 .frame-display-container {
     text-align: center;
-    margin: 15px 0;
+    margin: 2rem 0;
     position: relative;
-    min-height: 400px;
-    max-height: 400px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
 }
 
 .frame-display {
@@ -17,192 +12,92 @@
 
 .frame-display img {
     max-width: 100%;
-    max-height: 380px;
     height: auto;
-    width: auto;
-    border: 3px solid #e8ecef;
-    border-radius: 16px;
-    transition: border-color 0.3s ease, box-shadow 0.3s ease, opacity 0.15s ease;
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-    display: block;
-    position: relative;
-    z-index: 1;
-    opacity: 1;
-}
-
-#target-fps {
-    width: 150px;
-}
-
-#fps-value {
-    min-width: 30px;
-    text-align: center;
-    font-weight: 700;
-    color: #667eea;
-    background: rgba(102, 126, 234, 0.1);
-    padding: 4px 8px;
-    border-radius: 6px;
-    font-size: 14px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--border-radius);
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
 }
 
 .frame-display img.selected {
-    border-color: #27ae60;
-    box-shadow: 0 0 40px rgba(39, 174, 96, 0.5), 0 20px 60px rgba(0, 0, 0, 0.15);
+    border-color: var(--success-color);
+    box-shadow: 0 0 20px rgba(39, 174, 96, 0.5);
 }
 
 .frame-display img.predicted {
-    border-color: #f39c12;
-    box-shadow: 0 0 40px rgba(243, 156, 18, 0.5), 0 20px 60px rgba(0, 0, 0, 0.15);
-}
-
-.frame-display img.selected.predicted {
-    border-color: #e67e22;
-    box-shadow: 0 0 40px rgba(230, 126, 34, 0.7), 0 20px 60px rgba(0, 0, 0, 0.2);
+    border-color: var(--warning-color);
+    box-shadow: 0 0 20px rgba(243, 156, 18, 0.5);
 }
 
 .frame-controls {
     display: flex;
     justify-content: center;
-    gap: 15px;
-    margin: 15px 0;
+    gap: 1rem;
+    margin: 1rem 0;
     flex-wrap: wrap;
-}
-
-.frame-controls button {
-    min-width: 160px;
 }
 
 .frame-info {
     text-align: center;
-    font-size: 18px;
-    margin: 10px 0;
-    font-weight: 600;
-    color: #2c3e50;
-    padding: 10px;
-    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-    border-radius: 10px;
-    border: 2px solid rgba(102, 126, 234, 0.1);
-    min-height: 45px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    font-size: 1rem;
+    margin: 1rem 0;
+    font-weight: 500;
+    color: var(--muted-text-color);
+    padding: 0.8rem;
+    background: #f9f9f9;
+    border-radius: var(--border-radius);
+    border: 1px solid var(--border-color);
 }
 
 .selected-indicator {
-    color: #27ae60;
-    font-weight: 900;
-    animation: pulse 1.8s ease-in-out infinite;
-    text-shadow: 0 0 10px rgba(39, 174, 96, 0.3);
+    color: var(--success-color);
+    font-weight: 700;
 }
 
 .predicted-indicator {
-    color: #f39c12;
-    font-weight: 900;
-    animation: glow 2s ease-in-out infinite;
-    text-shadow: 0 0 10px rgba(243, 156, 18, 0.3);
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.7; transform: scale(1.05); }
-}
-
-@keyframes glow {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+    color: var(--warning-color);
+    font-weight: 700;
 }
 
 .progress-bar {
     width: 100%;
-    height: 30px;
-    background: linear-gradient(135deg, #ecf0f1, #bdc3c7);
-    border-radius: 15px;
-    margin: 15px 0;
+    height: 20px;
+    background: #e0e0e0;
+    border-radius: 10px;
+    margin: 1rem 0;
     overflow: hidden;
-    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
-    border: 2px solid rgba(255, 255, 255, 0.5);
-    position: relative;
 }
 
 .progress-fill {
     height: 100%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+    transition: width 0.4s ease;
     display: flex;
     align-items: center;
     justify-content: center;
     color: white;
-    font-weight: 800;
-    font-size: 16px;
-    position: relative;
-    overflow: hidden;
-}
-
-.progress-fill::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: -100%;
-    width: 100%;
-    height: 100%;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-    animation: progress-shine 2s ease-in-out infinite;
-}
-
-@keyframes progress-shine {
-    0% { left: -100%; }
-    100% { left: 100%; }
-}
-
-.frame-placeholder {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    display: none;
-    opacity: 0.3;
-}
-
-.placeholder-spinner {
-    width: 40px;
-    height: 40px;
-    border: 3px solid #f3f3f3;
-    border-top: 3px solid #667eea;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    font-weight: 600;
+    font-size: 0.8rem;
 }
 
 .instructions {
-    background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-    padding: 15px;
-    border-radius: 12px;
-    margin: 15px 0;
+    background: #f9f9f9;
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    margin: 1rem 0;
     text-align: center;
-    font-size: 14px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
-    border: 2px solid rgba(102, 126, 234, 0.1);
-    font-weight: 500;
+    font-size: 0.9rem;
+    border: 1px solid var(--border-color);
 }
 
 .keyboard-hint {
     display: inline-block;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--primary-color);
     color: white;
-    padding: 6px 12px;
+    padding: 0.4rem 0.8rem;
     border-radius: 6px;
-    margin: 0 4px;
-    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
-    font-weight: 600;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-    font-size: 12px;
-}
-
-#frame-viewer {
-    max-height: calc(100vh - 200px);
-    overflow-y: auto;
+    margin: 0 0.2rem;
+    font-family: 'Roboto Mono', monospace;
+    font-weight: 500;
+    font-size: 0.8rem;
 }

@@ -1,13 +1,11 @@
 .yolo-status {
     display: inline-flex;
     align-items: center;
-    padding: 8px 18px;
-    border-radius: 25px;
-    font-size: 14px;
-    margin-left: 16px;
-    font-weight: 700;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    gap: 8px;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    gap: 0.5rem;
 }
 
 .yolo-status::before {
@@ -19,99 +17,92 @@
 }
 
 .yolo-status.connected {
-    background: linear-gradient(135deg, #27ae60, #229954);
+    background: var(--success-color);
     color: white;
-    box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
 }
 
 .yolo-status.connected::before {
-    background: #fff;
+    background: white;
 }
 
 .yolo-status.disconnected {
-    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    background: var(--error-color);
     color: white;
-    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3);
 }
 
 .yolo-status.disconnected::before {
-    background: #fff;
-}
-
-@keyframes status-pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    background: white;
 }
 
 .model-info {
-    background: linear-gradient(135deg, rgba(39, 174, 96, 0.1), rgba(22, 160, 133, 0.1));
-    padding: 20px;
-    border-radius: 12px;
-    margin: 20px 0;
-    border: 2px solid rgba(39, 174, 96, 0.2);
+    background: rgba(39, 174, 96, 0.05);
+    padding: 1rem;
+    border-radius: var(--border-radius);
+    margin: 1rem 0;
+    border: 1px solid var(--success-color);
 }
 
 .model-info h4 {
-    color: #27ae60;
-    margin-bottom: 10px;
-    font-size: 1.1em;
+    color: var(--success-color);
+    margin-bottom: 0.5rem;
+    font-size: 1rem;
 }
 
 .class-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 10px;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
 }
 
 .class-tag {
-    background: linear-gradient(135deg, #27ae60, #16a085);
+    background: var(--success-color);
     color: white;
-    padding: 4px 12px;
+    padding: 0.3rem 0.8rem;
     border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
+    font-size: 0.8rem;
+    font-weight: 500;
 }
 
 .prediction-toggle {
     display: flex;
     align-items: center;
-    gap: 15px;
-    margin: 20px 0;
+    gap: 1rem;
+    margin: 1rem 0;
 }
 
 .toggle-switch {
     position: relative;
-    width: 60px;
-    height: 30px;
+    width: 50px;
+    height: 26px;
     background: #bdc3c7;
-    border-radius: 15px;
+    border-radius: 13px;
     cursor: pointer;
     transition: background 0.3s;
 }
 
 .toggle-switch.active {
-    background: #27ae60;
+    background: var(--success-color);
 }
 
 .toggle-switch::before {
     content: '';
     position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 24px;
-    height: 24px;
+    top: 2px;
+    left: 2px;
+    width: 22px;
+    height: 22px;
     background: white;
     border-radius: 50%;
     transition: transform 0.3s;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 .toggle-switch.active::before {
-    transform: translateX(30px);
+    transform: translateX(24px);
 }
 
 .toggle-label {
     font-weight: 600;
-    color: #2c3e50;
+    color: var(--text-color);
 }

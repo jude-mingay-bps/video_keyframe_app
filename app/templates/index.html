@@ -9,79 +9,134 @@
     <link rel="stylesheet" href="/static/css/forms.css">
     <link rel="stylesheet" href="/static/css/yolo.css">
     <link rel="stylesheet" href="/static/css/roboflow.css">
+    <link rel="stylesheet" href="/static/css/movenet.css">
+    <link rel="stylesheet" href="/static/css/yolo_pose.css">
     <link rel="stylesheet" href="/static/css/video.css">
     <link rel="stylesheet" href="/static/css/timeline.css">
     <link rel="stylesheet" href="/static/css/frames.css">
     <link rel="stylesheet" href="/static/css/annotations.css">
     <link rel="stylesheet" href="/static/css/toast.css">
     <link rel="stylesheet" href="/static/css/responsive.css">
+    <link rel="stylesheet" href="/static/css/tabs.css">
+    <link rel="stylesheet" href="/static/css/animations.css">
 </head>
 <body>
     <div class="toast-container" id="toast-container"></div>
 
     <div class="container">
-        <header>
+        <header class="fade-in-section">
             <h1>Video Frame Labeling Tool</h1>
             <p class="subtitle">With YOLO Predictions & Roboflow Integration</p>
         </header>
 
-        <div class="yolo-section">
-            <h2>YOLO Model Configuration <span id="yolo-status" class="yolo-status disconnected">Loading...</span></h2>
+        <div class="tabs-container fade-in-section">
+            <div class="tabs-nav">
+                <button class="tab-link" data-tab="yolo-tab">YOLO</button>
+                <button class="tab-link" data-tab="movenet-tab">MoveNet</button>
+                <button class="tab-link" data-tab="yolo-pose-tab">YOLO Pose</button>
+                <button class="tab-link" data-tab="roboflow-tab">Roboflow</button>
+            </div>
 
-            <div id="model-info-container">
-                </div>
-
-            <div class="input-group">
-                <label for="confidence-threshold">Confidence Threshold:</label>
-                <div class="range-container">
-                    <input type="range" id="confidence-threshold" min="0.05" max="0.95" value="0.25" step="0.05">
-                    <span class="range-value" id="confidence-value">0.25</span>
+            <div id="yolo-tab" class="tab-content">
+                <div class="yolo-section">
+                    <h2>YOLO Model Configuration <span id="yolo-status" class="yolo-status disconnected">Loading...</span></h2>
+                    <div id="model-info-container"></div>
+                    <div class="input-group">
+                        <label for="confidence-threshold">Confidence Threshold:</label>
+                        <div class="range-container">
+                            <input type="range" id="confidence-threshold" min="0.05" max="0.95" value="0.25" step="0.05">
+                            <span class="range-value" id="confidence-value">0.25</span>
+                        </div>
+                    </div>
+                    <div class="prediction-toggle">
+                        <div class="toggle-switch" id="prediction-toggle" onclick="togglePredictionMode()"></div>
+                        <span class="toggle-label">Enable YOLO Predictions</span>
+                    </div>
                 </div>
             </div>
 
-            <div class="prediction-toggle">
-                <div class="toggle-switch" id="prediction-toggle" onclick="togglePredictionMode()">
+            <div id="movenet-tab" class="tab-content">
+                <div class="movenet-section">
+                    <h2>MoveNet Lightning Configuration <span id="movenet-model-status" class="movenet-status disconnected">Loading...</span></h2>
+                    <div class="pose-controls">
+                        <button id="predict-pose-btn" class="btn btn-secondary">
+                            <i class="fas fa-running"></i>
+                            <span>Show Poses</span>
+                        </button>
+                    </div>
+                    <div class="model-info" id="movenet-model-info">
+                        <div class="model-info-item">
+                            <span class="model-info-label">Model:</span> MoveNet Lightning
+                        </div>
+                        <div class="model-info-item">
+                            <span class="model-info-label">Keypoints:</span> 17 (COCO format)
+                        </div>
+                        <div class="model-info-item">
+                            <span class="model-info-label">Input Size:</span> 192x192
+                            <span class="performance-badge">Ultra Fast</span>
+                        </div>
+                    </div>
                 </div>
-                <span class="toggle-label">Enable YOLO Predictions</span>
+            </div>
+
+            <div id="yolo-pose-tab" class="tab-content">
+                <div class="yolo-pose-section">
+                    <h2>YOLO Pose Detection <span id="yolo-pose-model-status" class="yolo-pose-status disconnected">Loading...</span></h2>
+                    <div class="yolo-pose-controls">
+                        <button id="predict-yolo-pose-btn" class="btn btn-secondary">
+                            <i class="fas fa-user"></i>
+                            <span>Show YOLO Poses</span>
+                        </button>
+                    </div>
+                    <div class="yolo-model-info" id="yolo-pose-model-info">
+                        <div class="yolo-model-info-item">
+                            <span class="yolo-model-info-label">Model:</span> YOLO Pose Detection
+                        </div>
+                        <div class="yolo-model-info-item">
+                            <span class="yolo-model-info-label">Keypoints:</span> 17 (COCO format)
+                        </div>
+                        <div class="yolo-model-info-item">
+                            <span class="yolo-model-info-label">Framework:</span> Ultralytics YOLO
+                            <span class="yolo-performance-badge">Multi-Person</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="roboflow-tab" class="tab-content">
+                <div class="roboflow-section">
+                    <h2>Roboflow Configuration <span id="roboflow-status" class="roboflow-status disconnected">Not Connected</span></h2>
+                    <div class="input-group">
+                        <label for="roboflow-url">Roboflow Project URL:</label>
+                        <input type="text" id="roboflow-url" placeholder="https://app.roboflow.com/workspace/project">
+                    </div>
+                    <div class="input-group">
+                        <label for="roboflow-api-key">Roboflow API Key:</label>
+                        <input type="password" id="roboflow-api-key" placeholder="Your Roboflow API key">
+                    </div>
+                    <div class="input-grid">
+                        <div class="input-group">
+                            <label for="roboflow-batch-name">Custom Batch Name (Optional):</label>
+                            <input type="text" id="roboflow-batch-name" placeholder="Defaults to video name">
+                        </div>
+                        <div class="input-group">
+                            <label for="roboflow-split">Upload to Split:</label>
+                            <select id="roboflow-split">
+                                <option value="train" selected>Train</option>
+                                <option value="valid">Valid</option>
+                                <option value="test">Test</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button onclick="saveRoboflowConfig()" class="roboflow-btn">Save Configuration</button>
+                        <button onclick="testRoboflowConnection()">Test Connection</button>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="roboflow-section">
-            <h2>Roboflow Configuration <span id="roboflow-status" class="roboflow-status disconnected">Not Connected</span></h2>
-
-            <div class="input-group">
-                <label for="roboflow-url">Roboflow Project URL:</label>
-                <input type="text" id="roboflow-url" placeholder="https://app.roboflow.com/workspace/project">
-            </div>
-
-            <div class="input-group">
-                <label for="roboflow-api-key">Roboflow API Key:</label>
-                <input type="password" id="roboflow-api-key" placeholder="Your Roboflow API key">
-            </div>
-
-            <div class="input-grid">
-                <div class="input-group">
-                    <label for="roboflow-batch-name">Custom Batch Name (Optional):</label>
-                    <input type="text" id="roboflow-batch-name" placeholder="Defaults to video name">
-                </div>
-
-                <div class="input-group">
-                    <label for="roboflow-split">Upload to Split:</label>
-                    <select id="roboflow-split">
-                        <option value="train" selected>Train</option>
-                        <option value="valid">Valid</option>
-                        <option value="test">Test</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="button-group">
-                <button onclick="saveRoboflowConfig()" class="roboflow-btn">Save Configuration</button>
-                <button onclick="testRoboflowConnection()">Test Connection</button>
-            </div>
-        </div>
-
-        <div class="upload-section">
+        <div class="upload-section fade-in-section">
             <h2>Add Videos</h2>
 
             <div class="input-group">
@@ -100,13 +155,13 @@
             </div>
         </div>
 
-        <div class="video-list" id="video-list" style="display: none;">
+        <div class="video-list fade-in-section" id="video-list">
             <h2>Video Queue</h2>
             <div id="video-items"></div>
             <button onclick="startProcessing()" id="start-btn">Start Processing</button>
         </div>
 
-        <div class="frame-selector" style="display: none;">
+        <div class="frame-selector">
             <h2 id="current-video-title">Processing Video</h2>
 
             <div class="video-preview">
@@ -146,7 +201,7 @@
                 <p>Loading frames...</p>
             </div>
             
-            <div class="processing-status" id="processing-status" style="display: none;">
+            <div class="processing-status" id="processing-status">
                 <div class="processing-header">
                     <h4>Background YOLO Processing</h4>
                     <span class="processing-info" id="processing-info">0 / 0 frames</span>
@@ -156,7 +211,7 @@
                 </div>
             </div>
 
-            <div id="frame-viewer" style="display: none;">
+            <div id="frame-viewer">
                 <div class="instructions">
                     Use <span class="keyboard-hint">←</span> <span class="keyboard-hint">→</span> to navigate,
                     <span class="keyboard-hint">Space</span> to select/deselect,
@@ -181,7 +236,7 @@
 
                 <div class="frame-display-container">
                     <div class="frame-display">
-                        <img id="frame-image" src="" alt="Video frame" style="display: none;">
+                        <img id="frame-image" src="" alt="Video frame">
                         <div class="bbox-overlay" id="bbox-overlay"></div>
                     </div>
                     <div class="frame-placeholder" id="frame-placeholder">
@@ -192,7 +247,7 @@
                 <div class="frame-controls">
                     <button onclick="previousFrame()">← Previous</button>
                     <button onclick="toggleSelection()">Toggle Selection</button>
-                    <button onclick="toggleCorrectionMode()" class="roboflow-btn" id="correction-btn" style="display: none;">🔧 Correct Labels</button>
+                    <button onclick="toggleCorrectionMode()" class="roboflow-btn" id="correction-btn">🔧 Correct Labels</button>
                     <button onclick="nextFrame()">Next →</button>
                 </div>
 
@@ -200,8 +255,8 @@
                     <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
                 </div>
 
-                <button onclick="finishVideo()" style="width: 100%; margin-top: 20px;">Finish This Video</button>
-                <button onclick="showMainMenu()" style="width: 100%; margin-top: 10px; background: linear-gradient(135deg, #95a5a6, #7f8c8d);">Back to Video List</button>
+                <button onclick="finishVideo()" class="full-width-btn">Finish This Video</button>
+                <button onclick="showMainMenu()" class="full-width-btn secondary-btn">Back to Video List</button>
             </div>
         </div>
     </div>
@@ -211,10 +266,13 @@
     <script src="/static/js/timeline.js"></script>
     <script src="/static/js/roboflow.js"></script>
     <script src="/static/js/yolo.js"></script>
+    <script src="/static/js/movenet.js"></script>
+    <script src="/static/js/yolo_pose.js"></script>
     <script src="/static/js/frames.js"></script>
     <script src="/static/js/video.js"></script>
     <script src="/static/js/events.js"></script>
     <script src="/static/js/main.js"></script>
+    <script src="/static/js/tabs.js"></script>
 
 </body>
 </html>
