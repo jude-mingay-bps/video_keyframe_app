@@ -46,6 +46,74 @@
     50% { opacity: 1; }
 }
 
+.processing-status {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(15px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    padding: 12px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px 0 rgba(31, 38, 135, 0.1);
+    margin: 10px 0;
+    animation: slideIn 0.4s ease-out;
+}
+
+.processing-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.processing-header h4 {
+    margin: 0;
+    color: #27ae60;
+    font-size: 14px;
+}
+
+.processing-info {
+    color: #666;
+    font-size: 14px;
+}
+
+.processing-bar {
+    width: 100%;
+    height: 16px;
+    background: rgba(39, 174, 96, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+}
+
+.processing-progress {
+    height: 100%;
+    background: linear-gradient(90deg, #27ae60, #16a085);
+    border-radius: 10px;
+    transition: width 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.processing-progress::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
 .roboflow-section {
     border: 2px solid transparent;
     background: linear-gradient(white, white) padding-box,

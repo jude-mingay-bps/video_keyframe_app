@@ -1,20 +1,25 @@
 .annotation-info {
     background: linear-gradient(135deg, rgba(39, 174, 96, 0.1), rgba(22, 160, 133, 0.1));
-    padding: 15px 20px;
-    border-radius: 12px;
-    margin: 15px 0;
+    padding: 10px 15px;
+    border-radius: 10px;
+    margin: 10px 0;
     border: 2px solid rgba(39, 174, 96, 0.2);
-    display: none;
+    min-height: 60px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    transform: translateY(0);
 }
 
 .annotation-info.active {
-    display: block;
+    opacity: 1;
+    visibility: visible;
 }
 
 .annotation-info h4 {
     color: #27ae60;
-    margin-bottom: 10px;
-    font-size: 1.1em;
+    margin-bottom: 8px;
+    font-size: 1em;
 }
 
 .annotation-list {
@@ -47,10 +52,11 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    right: 0;
+    bottom: 0;
     pointer-events: none;
-    z-index: 1;
+    z-index: 10;
+    transition: opacity 0.2s ease;
 }
 
 .bbox-item {
@@ -60,18 +66,34 @@
     pointer-events: auto;
     border-radius: 4px;
     transition: all 0.3s ease;
+    animation: fadeIn 0.2s ease;
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 0.85;
+        transform: scale(1);
+    }
 }
 
 .bbox-item:hover {
     border-width: 3px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+    opacity: 1;
+    background-color: rgba(255, 255, 255, 0.15);
 }
 
 .bbox-item.misclassified {
-    border-color: #ff0000 !important;
-    border-width: 4px !important;
-    box-shadow: 0 0 15px rgba(255, 0, 0, 0.5) !important;
+    border-color: rgba(255, 0, 0, 0.9) !important;
+    border-width: 3px !important;
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.3) !important;
     animation: pulse-red 1.5s ease-in-out infinite;
+    background-color: rgba(255, 0, 0, 0.1) !important;
 }
 
 .bbox-label {
@@ -79,19 +101,20 @@
     bottom: 100%;
     left: 50%;
     transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
+    background: rgba(0, 0, 0, 0.7);
+    color: rgba(255, 255, 255, 0.95);
     padding: 2px 8px;
     border-radius: 4px;
-    font-size: 12px;
-    font-weight: bold;
+    font-size: 11px;
+    font-weight: 600;
     white-space: nowrap;
     pointer-events: none;
     margin-bottom: 2px;
+    backdrop-filter: blur(4px);
 }
 
 .bbox-item.misclassified .bbox-label {
-    background: #ff0000;
+    background: rgba(255, 0, 0, 0.8);
     animation: pulse-label 1.5s ease-in-out infinite;
 }
 
@@ -112,15 +135,19 @@
 
 .correction-controls {
     background: linear-gradient(135deg, rgba(231, 76, 60, 0.1), rgba(192, 57, 43, 0.1));
-    padding: 20px;
-    border-radius: 12px;
-    margin: 15px 0;
+    padding: 15px;
+    border-radius: 10px;
+    margin: 10px 0;
     border: 2px solid rgba(231, 76, 60, 0.2);
-    display: none;
+    min-height: 90px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
 }
 
 .correction-controls.active {
-    display: block;
+    opacity: 1;
+    visibility: visible;
 }
 
 .correction-controls h4 {

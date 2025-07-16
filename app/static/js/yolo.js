@@ -97,31 +97,60 @@ async function runPrediction() {
         const currentFrame = frames[currentFrameIndex];
         const confidence = parseFloat(document.getElementById('confidence-threshold').value);
 
-        const response = await fetch('/predict_frame', {
+        // First check server cache for pre-processed annotations
+        const cacheResponse = await fetch('/get_cached_annotations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                frame_data: currentFrame.data,
-                confidence: confidence
+                frame_num: currentFrame.frame_num
             })
         });
 
-        const data = await response.json();
-
-        if (data.success) {
+        const cacheData = await cacheResponse.json();
+        
+        if (cacheData.success && cacheData.cached && cacheData.annotations !== null) {
+            // Use cached annotations
             framePredictions.set(currentFrameIndex, {
-                annotations: data.annotations,
-                frame_data: data.frame_data
+                annotations: cacheData.annotations,
+                frame_data: currentFrame.data,
+                fromCache: true
             });
 
             updateFrameDisplay();
 
-            if (data.annotations.length > 0) {
+            if (cacheData.annotations.length > 0) {
                 const correctionBtn = document.getElementById('correction-btn');
                 if(correctionBtn) correctionBtn.style.display = 'block';
             }
         } else {
-            showToast('Prediction failed: ' + data.error, 'error');
+            // No cache available, run prediction
+            const response = await fetch('/predict_frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    frame_data: currentFrame.data,
+                    confidence: confidence
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                framePredictions.set(currentFrameIndex, {
+                    annotations: data.annotations,
+                    frame_data: data.frame_data,
+                    fromCache: false
+                });
+
+                updateFrameDisplay();
+
+                if (data.annotations.length > 0) {
+                    const correctionBtn = document.getElementById('correction-btn');
+                    if(correctionBtn) correctionBtn.style.display = 'block';
+                }
+            } else {
+                showToast('Prediction failed: ' + data.error, 'error');
+            }
         }
     } catch (error) {
         showToast('Error running prediction: ' + error.message, 'error');

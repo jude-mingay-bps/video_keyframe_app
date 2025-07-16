@@ -1,6 +1,11 @@
 function hideAnnotations() {
-    document.getElementById('annotation-info').classList.remove('active');
-    document.getElementById('correction-controls').classList.remove('active');
+    const annotationInfo = document.getElementById('annotation-info');
+    const correctionControls = document.getElementById('correction-controls');
+    
+    // Use opacity transition instead of immediate hide
+    annotationInfo.classList.remove('active');
+    correctionControls.classList.remove('active');
+    
     if (correctionMode) {
         toggleCorrectionMode();
     }
@@ -26,41 +31,53 @@ function createInteractiveBoundingBoxes(annotations, imageElement) {
     const overlay = document.getElementById('bbox-overlay');
 
     if (!imageElement.complete || !imageElement.naturalHeight) {
-        imageElement.onload = () => createInteractiveBoundingBoxes(annotations, imageElement);
+        setTimeout(() => createInteractiveBoundingBoxes(annotations, imageElement), 50);
         return;
     }
 
-    const container = imageElement.parentElement;
-    const containerRect = container.getBoundingClientRect();
-    const imgRect = imageElement.getBoundingClientRect();
-    const offsetX = imgRect.left - containerRect.left;
-    const offsetY = imgRect.top - containerRect.top;
-    const displayWidth = imageElement.offsetWidth;
-    const displayHeight = imageElement.offsetHeight;
     const naturalWidth = imageElement.naturalWidth;
     const naturalHeight = imageElement.naturalHeight;
-    const scaleX = displayWidth / naturalWidth;
-    const scaleY = displayHeight / naturalHeight;
-
-    overlay.style.width = displayWidth + 'px';
-    overlay.style.height = displayHeight + 'px';
+    
+    if (!naturalWidth || !naturalHeight) {
+        setTimeout(() => createInteractiveBoundingBoxes(annotations, imageElement), 50);
+        return;
+    }
+    
+    // Create a wrapper that matches the image exactly
+    const wrapper = document.createElement('div');
+    wrapper.style.position = 'absolute';
+    wrapper.style.top = '0';
+    wrapper.style.left = '0';
+    wrapper.style.width = '100%';
+    wrapper.style.height = '100%';
+    wrapper.style.pointerEvents = 'none';
+    
+    // Clear and setup overlay
+    overlay.innerHTML = '';
     overlay.style.position = 'absolute';
-    overlay.style.top = offsetY + 'px';
-    overlay.style.left = offsetX + 'px';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.right = '0';
+    overlay.style.bottom = '0';
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.appendChild(wrapper);
 
     annotations.forEach((annotation, index) => {
         const [x1, y1, x2, y2] = annotation.bbox_xyxy;
-        const left = x1 * scaleX;
-        const top = y1 * scaleY;
-        const width = (x2 - x1) * scaleX;
-        const height = (y2 - y1) * scaleY;
+        
+        // Convert to percentages based on natural image dimensions
+        const leftPercent = (x1 / naturalWidth) * 100;
+        const topPercent = (y1 / naturalHeight) * 100;
+        const widthPercent = ((x2 - x1) / naturalWidth) * 100;
+        const heightPercent = ((y2 - y1) / naturalHeight) * 100;
 
         const bbox = document.createElement('div');
         bbox.className = 'bbox-item';
-        bbox.style.left = `${left}px`;
-        bbox.style.top = `${top}px`;
-        bbox.style.width = `${width}px`;
-        bbox.style.height = `${height}px`;
+        bbox.style.left = `${leftPercent}%`;
+        bbox.style.top = `${topPercent}%`;
+        bbox.style.width = `${widthPercent}%`;
+        bbox.style.height = `${heightPercent}%`;
         bbox.style.position = 'absolute';
 
         const frameKey = `${currentVideoId}_${currentFrameIndex}`;
@@ -74,7 +91,16 @@ function createInteractiveBoundingBoxes(annotations, imageElement) {
             bbox.classList.add('misclassified');
             label.textContent = 'Other';
         } else {
-            const colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#34495e', '#e67e22'];
+            const colors = [
+                'rgba(52, 152, 219, 0.85)',   // Blue
+                'rgba(231, 76, 60, 0.85)',     // Red
+                'rgba(46, 204, 113, 0.85)',    // Green
+                'rgba(243, 156, 18, 0.85)',    // Orange
+                'rgba(155, 89, 182, 0.85)',    // Purple
+                'rgba(26, 188, 156, 0.85)',    // Turquoise
+                'rgba(52, 73, 94, 0.85)',      // Dark gray
+                'rgba(230, 126, 34, 0.85)'     // Dark orange
+            ];
             bbox.style.borderColor = colors[annotation.class_id % colors.length];
             label.textContent = `${annotation.class_name}: ${(annotation.confidence * 100).toFixed(1)}%`;
         }
@@ -88,8 +114,15 @@ function createInteractiveBoundingBoxes(annotations, imageElement) {
             });
         }
 
-        overlay.appendChild(bbox);
+        wrapper.appendChild(bbox);
         currentBoundingBoxes.push({ element: bbox, annotation: annotation, index: index, corrected: isCorrected });
+    });
+    
+    // Ensure wrapper has pointer events for child elements
+    wrapper.style.pointerEvents = 'none';
+    const bboxItems = wrapper.querySelectorAll('.bbox-item');
+    bboxItems.forEach(item => {
+        item.style.pointerEvents = 'auto';
     });
 }
 
@@ -127,18 +160,17 @@ function clearBoundingBoxDisplay() {
 }
 
 function updateBoundingBoxDisplay() {
-    if (!correctionMode) {
-        clearBoundingBoxDisplay();
-        return;
-    };
-
     const img = document.getElementById('frame-image');
     if (img.src && framePredictions.has(currentFrameIndex)) {
         const prediction = framePredictions.get(currentFrameIndex);
-        if (img.complete) {
-            createInteractiveBoundingBoxes(prediction.annotations, img);
+        if (prediction.annotations && prediction.annotations.length > 0) {
+            if (img.complete) {
+                createInteractiveBoundingBoxes(prediction.annotations, img);
+            } else {
+                img.onload = () => createInteractiveBoundingBoxes(prediction.annotations, img);
+            }
         } else {
-            img.onload = () => createInteractiveBoundingBoxes(prediction.annotations, img);
+            clearBoundingBoxDisplay();
         }
     } else {
         clearBoundingBoxDisplay();
@@ -178,26 +210,36 @@ function updateAnnotationDisplay() {
     }
 }
 
+let pendingImageLoad = null;
+let isFirstFrame = true;
+let currentImageSrc = null;
+
 function updateFrameDisplay() {
     if (!frames.length) return;
 
     const img = document.getElementById('frame-image');
-    img.onload = null;
-
     const prediction = framePredictions.get(currentFrameIndex);
     const frameSource = prediction ? prediction.frame_data : frames[currentFrameIndex].data;
+    
+    // Direct update - no fancy transitions
     img.src = `data:image/jpeg;base64,${frameSource}`;
-
-    clearBoundingBoxDisplay();
-
+    img.style.display = 'block';
+    img.style.opacity = '1';
+    
+    // Update annotations
     if (prediction) {
         img.classList.add('predicted');
         updateAnnotationDisplay();
-        img.onload = () => createInteractiveBoundingBoxes(prediction.annotations, img);
-        if(img.complete) img.onload();
+        // Create bounding boxes after a short delay
+        setTimeout(() => {
+            if (prediction.annotations && prediction.annotations.length > 0) {
+                createInteractiveBoundingBoxes(prediction.annotations, img);
+            }
+        }, 50);
     } else {
         img.classList.remove('predicted');
         hideAnnotations();
+        clearBoundingBoxDisplay();
     }
 
     if (selectedFrames.has(currentFrameIndex)) {

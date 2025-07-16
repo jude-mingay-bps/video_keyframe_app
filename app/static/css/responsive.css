@@ -1,0 +1,262 @@
+/* Responsive design for Video Frame Labeling Tool */
+
+/* Tablet styles */
+@media (max-width: 1024px) {
+    .container {
+        padding: 10px;
+    }
+    
+    .frame-controls {
+        gap: 10px;
+    }
+    
+    .frame-controls button {
+        min-width: 140px;
+        font-size: 14px;
+    }
+    
+    .frame-display-container {
+        min-height: 350px;
+        max-height: 350px;
+    }
+    
+    .frame-display img {
+        max-height: 330px;
+    }
+}
+
+/* Mobile styles */
+@media (max-width: 768px) {
+    h1 {
+        font-size: 2em;
+    }
+    
+    .subtitle {
+        font-size: 0.9em;
+    }
+    
+    .upload-section, .roboflow-section, .yolo-section, .video-list, .frame-selector {
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .input-grid {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .button-group {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .button-group button {
+        width: 100%;
+    }
+    
+    .frame-controls {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .frame-controls button {
+        width: 100%;
+        min-width: unset;
+    }
+    
+    .frame-display-container {
+        min-height: 300px;
+        max-height: 300px;
+    }
+    
+    .frame-display img {
+        max-height: 280px;
+    }
+    
+    .instructions {
+        font-size: 12px;
+        padding: 10px;
+    }
+    
+    .keyboard-hint {
+        padding: 4px 8px;
+        font-size: 11px;
+        margin: 0 2px;
+    }
+    
+    .frame-info {
+        font-size: 14px;
+        padding: 8px;
+    }
+    
+    .timeline-container {
+        padding: 15px;
+    }
+    
+    .segment-controls {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .segment-controls input,
+    .segment-controls button {
+        width: 100%;
+    }
+}
+
+/* Small mobile styles */
+@media (max-width: 480px) {
+    h1 {
+        font-size: 1.5em;
+    }
+    
+    header {
+        padding: 25px 0;
+    }
+    
+    .upload-section, .roboflow-section, .yolo-section, .video-list, .frame-selector {
+        padding: 15px;
+        border-radius: 16px;
+    }
+    
+    .frame-display-container {
+        min-height: 250px;
+        max-height: 250px;
+        margin: 10px 0;
+    }
+    
+    .frame-display img {
+        max-height: 230px;
+        border-radius: 12px;
+    }
+    
+    .annotation-info,
+    .correction-controls {
+        padding: 8px;
+        font-size: 12px;
+    }
+    
+    .annotation-item {
+        font-size: 11px;
+        padding: 4px 8px;
+    }
+    
+    .progress-bar {
+        height: 24px;
+    }
+    
+    .progress-fill {
+        font-size: 12px;
+    }
+}
+
+/* Ultra-wide screens */
+@media (min-width: 1600px) {
+    .container {
+        max-width: 1400px;
+    }
+    
+    .frame-display-container {
+        min-height: 500px;
+        max-height: 500px;
+    }
+    
+    .frame-display img {
+        max-height: 480px;
+    }
+}
+
+/* Height-based media queries for better vertical fit */
+@media (max-height: 800px) {
+    .frame-display-container {
+        min-height: 350px;
+        max-height: 350px;
+    }
+    
+    .frame-display img {
+        max-height: 330px;
+    }
+    
+    .instructions {
+        margin: 10px 0;
+        padding: 10px;
+    }
+    
+    #frame-viewer {
+        max-height: calc(100vh - 150px);
+    }
+}
+
+@media (max-height: 700px) {
+    header {
+        padding: 20px 0;
+        margin-bottom: 15px;
+    }
+    
+    h1 {
+        font-size: 2.2em;
+        margin-bottom: 5px;
+    }
+    
+    .frame-display-container {
+        min-height: 300px;
+        max-height: 300px;
+    }
+    
+    .frame-display img {
+        max-height: 280px;
+    }
+    
+    .annotation-info,
+    .correction-controls,
+    .processing-status {
+        margin: 5px 0;
+    }
+}
+
+/* Landscape orientation adjustments */
+@media (orientation: landscape) and (max-height: 600px) {
+    .frame-display-container {
+        min-height: 250px;
+        max-height: 250px;
+    }
+    
+    .frame-display img {
+        max-height: 230px;
+    }
+    
+    .instructions {
+        display: none;
+    }
+    
+    .frame-info {
+        margin: 5px 0;
+        padding: 5px;
+        font-size: 14px;
+    }
+}
+
+/* Print styles */
+@media print {
+    body {
+        background: white;
+    }
+    
+    .container {
+        max-width: 100%;
+    }
+    
+    button,
+    .button-group,
+    .frame-controls,
+    .timeline-container,
+    .instructions {
+        display: none;
+    }
+    
+    .frame-display img {
+        max-width: 100%;
+        height: auto;
+        border: 1px solid #ddd;
+    }
+}

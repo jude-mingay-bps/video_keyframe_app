@@ -50,6 +50,46 @@ def predict_frame():
     })
 
 
+@bp.route('/get_cached_annotations', methods=['POST'])
+def get_cached_annotations():
+    data = request.json
+    frame_num = data.get('frame_num')
+    
+    if frame_num is None:
+        return jsonify({'success': False, 'error': 'No frame number provided'})
+    
+    cached_result = video_processing.get_frame_annotations(frame_num)
+    
+    if cached_result is not None:
+        return jsonify({
+            'success': True,
+            'cached': True,
+            'annotations': cached_result.get('annotations'),
+            'message': cached_result.get('status', 'From cache'),
+            'processed': cached_result.get('processed', True)
+        })
+    else:
+        return jsonify({
+            'success': False,
+            'cached': False,
+            'message': 'No cached annotations found'
+        })
+
+
+@bp.route('/get_background_processing_status', methods=['GET'])
+def get_background_processing_status():
+    total_frames = len(video_processing.frame_annotations_cache)
+    processed_frames = sum(1 for v in video_processing.frame_annotations_cache.values() if v.get('processed'))
+    
+    return jsonify({
+        'success': True,
+        'total_frames': total_frames,
+        'processed_frames': processed_frames,
+        'is_complete': total_frames > 0 and processed_frames == total_frames,
+        'progress_percentage': (processed_frames / total_frames * 100) if total_frames > 0 else 0
+    })
+
+
 @bp.route('/test_roboflow', methods=['POST'])
 def test_roboflow_endpoint():
     data = request.json
@@ -200,13 +240,16 @@ def extract_frames_endpoint():
     start_time = data.get('start_time', 0)
     duration = data.get('duration', 30)
     target_fps = data.get('target_fps', 10)
+    confidence_threshold = data.get('confidence_threshold', 0.25)
 
     if not video_id or 'videos' not in session or video_id not in session['videos']:
         return jsonify({'success': False, 'error': 'Video not found'})
 
     video_path = session['videos'][video_id]['path']
 
-    frames = video_processing.extract_frames(video_path, start_time, duration, target_fps)
+    frames = video_processing.extract_frames(video_path, start_time, duration, target_fps, 
+                                              start_background_processing=True, 
+                                              confidence_threshold=confidence_threshold)
 
     if frames:
         return jsonify({'success': True, 'frames': frames, 'fps': target_fps, 'frame_count': len(frames)})

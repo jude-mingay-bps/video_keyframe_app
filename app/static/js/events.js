@@ -1,3 +1,6 @@
+let keyNavigationThrottle = false;
+let keyNavigationDelay = 50; // milliseconds
+
 function initializeEventListeners() {
     document.getElementById('confidence-threshold').addEventListener('input', (e) => {
         document.getElementById('confidence-value').textContent = e.target.value;
@@ -13,11 +16,23 @@ function initializeEventListeners() {
         switch(e.key) {
             case 'ArrowLeft':
                 e.preventDefault();
-                previousFrame();
+                if (!keyNavigationThrottle) {
+                    keyNavigationThrottle = true;
+                    previousFrame();
+                    setTimeout(() => {
+                        keyNavigationThrottle = false;
+                    }, keyNavigationDelay);
+                }
                 break;
             case 'ArrowRight':
                 e.preventDefault();
-                nextFrame();
+                if (!keyNavigationThrottle) {
+                    keyNavigationThrottle = true;
+                    nextFrame();
+                    setTimeout(() => {
+                        keyNavigationThrottle = false;
+                    }, keyNavigationDelay);
+                }
                 break;
             case ' ':
                 e.preventDefault();
