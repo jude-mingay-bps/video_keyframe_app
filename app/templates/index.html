@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Frame Selector with YOLO & Roboflow Integration</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/base.css">
     <link rel="stylesheet" href="/static/css/components.css">
     <link rel="stylesheet" href="/static/css/forms.css">
@@ -19,6 +22,8 @@
     <link rel="stylesheet" href="/static/css/responsive.css">
     <link rel="stylesheet" href="/static/css/tabs.css">
     <link rel="stylesheet" href="/static/css/animations.css">
+    <link rel="stylesheet" href="/static/css/workflow.css">
+    <link rel="stylesheet" href="/static/css/model-tabs.css">
 </head>
 <body>
     <div class="toast-container" id="toast-container"></div>
@@ -29,17 +34,89 @@
             <p class="subtitle">With YOLO Predictions & Roboflow Integration</p>
         </header>
 
-        <div class="tabs-container fade-in-section">
-            <div class="tabs-nav">
-                <button class="tab-link" data-tab="yolo-tab">YOLO</button>
-                <button class="tab-link" data-tab="movenet-tab">MoveNet</button>
-                <button class="tab-link" data-tab="yolo-pose-tab">YOLO Pose</button>
-                <button class="tab-link" data-tab="roboflow-tab">Roboflow</button>
+        <!-- Step Progress Indicator -->
+        <div class="step-progress" id="step-progress">
+            <div class="step" data-step="1">
+                <div class="step-circle">1</div>
+                <div class="step-label">Video Upload</div>
+            </div>
+            <div class="step" data-step="2">
+                <div class="step-circle">2</div>
+                <div class="step-label">Model Config</div>
+            </div>
+            <div class="step" data-step="3">
+                <div class="step-circle">3</div>
+                <div class="step-label">Frame Selection</div>
+            </div>
+            <div class="step" data-step="4">
+                <div class="step-circle">4</div>
+                <div class="step-label">Upload</div>
+            </div>
+        </div>
+
+        <!-- Step 1: Video Upload and Queue -->
+        <div class="workflow-step" id="step-1" data-step="1">
+            <div class="step-header">
+                <h2>📹 Step 1: Add Videos</h2>
+                <p class="step-description">Import videos from YouTube or upload your own files to start labeling</p>
+            </div>
+            
+            <div class="upload-section">
+                <div class="upload-options">
+                    <div class="upload-option">
+                        <div class="upload-icon">🔗</div>
+                        <h3>YouTube Video</h3>
+                        <div class="input-group">
+                            <label for="youtube-url">Paste YouTube URL</label>
+                            <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=dQw4w9WgXcQ">
+                        </div>
+                        <button onclick="addYouTubeVideo()" class="btn-primary">Add YouTube Video</button>
+                    </div>
+
+                    <div class="upload-divider">
+                        <span>OR</span>
+                    </div>
+
+                    <div class="upload-option">
+                        <div class="upload-icon">📁</div>
+                        <h3>Local File</h3>
+                        <div class="input-group">
+                            <label for="file-upload">Upload video file</label>
+                            <div class="file-input-container">
+                                <input type="file" id="file-upload" accept="video/*" onchange="updateFileDisplay()">
+                                <div class="file-input-display" id="file-display">
+                                    <span>Choose video file...</span>
+                                </div>
+                            </div>
+                        </div>
+                        <button onclick="uploadFile()" class="btn-primary">Upload File</button>
+                    </div>
+                </div>
             </div>
 
-            <div id="yolo-tab" class="tab-content">
+            <div class="video-list" id="video-list">
+                <h3>Video Queue</h3>
+                <div id="video-items"></div>
+                <button onclick="startProcessing()" id="start-btn" style="display: none;">Start Processing</button>
+            </div>
+        </div>
+
+        <!-- Step 2: Model Configuration -->
+        <div class="workflow-step" id="step-2" data-step="2" style="display: none;">
+            <div class="step-header">
+                <h2>🔧 Step 2: Configure Models</h2>
+                <p class="step-description">Set up your AI models for object detection and pose estimation</p>
+            </div>
+            
+            <div class="model-tabs">
+                <div class="model-tab active" data-model="yolo">YOLO Detection</div>
+                <div class="model-tab" data-model="movenet">MoveNet Pose</div>
+                <div class="model-tab" data-model="yolo-pose">YOLO Pose</div>
+            </div>
+            
+            <div class="model-config active" id="yolo-config">
                 <div class="yolo-section">
-                    <h2>YOLO Model Configuration <span id="yolo-status" class="yolo-status disconnected">Loading...</span></h2>
+                    <h3>YOLO Model Configuration <span id="yolo-status" class="yolo-status disconnected">Loading...</span></h3>
                     <div id="model-info-container"></div>
                     <div class="input-group">
                         <label for="confidence-threshold">Confidence Threshold:</label>
@@ -54,10 +131,10 @@
                     </div>
                 </div>
             </div>
-
-            <div id="movenet-tab" class="tab-content">
+            
+            <div class="model-config" id="movenet-config">
                 <div class="movenet-section">
-                    <h2>MoveNet Lightning Configuration <span id="movenet-model-status" class="movenet-status disconnected">Loading...</span></h2>
+                    <h3>MoveNet Lightning Configuration <span id="movenet-model-status" class="movenet-status disconnected">Loading...</span></h3>
                     <div class="pose-controls">
                         <button id="predict-pose-btn" class="btn btn-secondary">
                             <i class="fas fa-running"></i>
@@ -78,10 +155,10 @@
                     </div>
                 </div>
             </div>
-
-            <div id="yolo-pose-tab" class="tab-content">
+            
+            <div class="model-config" id="yolo-pose-config">
                 <div class="yolo-pose-section">
-                    <h2>YOLO Pose Detection <span id="yolo-pose-model-status" class="yolo-pose-status disconnected">Loading...</span></h2>
+                    <h3>YOLO Pose Detection <span id="yolo-pose-model-status" class="yolo-pose-status disconnected">Loading...</span></h3>
                     <div class="yolo-pose-controls">
                         <button id="predict-yolo-pose-btn" class="btn btn-secondary">
                             <i class="fas fa-user"></i>
@@ -102,163 +179,165 @@
                     </div>
                 </div>
             </div>
+            
+            <div class="step-actions">
+                <button onclick="proceedToStep(3)" class="btn-primary">Continue to Frame Selection</button>
+                <button onclick="goBackToStep(1)" class="btn-secondary">Back to Videos</button>
+            </div>
+        </div>
 
-            <div id="roboflow-tab" class="tab-content">
-                <div class="roboflow-section">
-                    <h2>Roboflow Configuration <span id="roboflow-status" class="roboflow-status disconnected">Not Connected</span></h2>
-                    <div class="input-group">
-                        <label for="roboflow-url">Roboflow Project URL:</label>
-                        <input type="text" id="roboflow-url" placeholder="https://app.roboflow.com/workspace/project">
-                    </div>
-                    <div class="input-group">
-                        <label for="roboflow-api-key">Roboflow API Key:</label>
-                        <input type="password" id="roboflow-api-key" placeholder="Your Roboflow API key">
-                    </div>
-                    <div class="input-grid">
-                        <div class="input-group">
-                            <label for="roboflow-batch-name">Custom Batch Name (Optional):</label>
-                            <input type="text" id="roboflow-batch-name" placeholder="Defaults to video name">
+        <!-- Step 3: Frame Selection -->
+        <div class="workflow-step" id="step-3" data-step="3" style="display: none;">
+            <div class="step-header">
+                <h2>🎯 Step 3: Select Frames</h2>
+                <p class="step-description">Choose the video segment and frames you want to label</p>
+            </div>
+
+            <div class="frame-selector">
+                <h3 id="current-video-title">Processing Video</h3>
+
+                <div class="video-preview">
+                    <video id="video-player" controls></video>
+                </div>
+
+                <div class="timeline-container">
+                    <h4>Select Video Segment</h4>
+                    <div class="timeline" id="timeline">
+                        <div class="timeline-selection" id="timeline-selection">
+                            <div class="timeline-handle left"></div>
+                            <div class="timeline-handle right"></div>
+                            <div class="timeline-time start" id="time-start">0:00</div>
+                            <div class="timeline-time end" id="time-end">0:30</div>
                         </div>
-                        <div class="input-group">
-                            <label for="roboflow-split">Upload to Split:</label>
-                            <select id="roboflow-split">
-                                <option value="train" selected>Train</option>
-                                <option value="valid">Valid</option>
-                                <option value="test">Test</option>
-                            </select>
+                    </div>
+                    <div class="timeline-info">
+                        <span id="video-duration">Duration: 0:00</span>
+                        <span id="segment-duration">Selected: 30s</span>
+                    </div>
+
+                    <div class="segment-controls">
+                        <label>Start:</label>
+                        <input type="number" id="start-time" min="0" value="0" step="0.1">
+                        <label>Duration:</label>
+                        <input type="number" id="duration" min="1" max="60" value="30" step="1">
+                        <label>FPS:</label>
+                        <input type="range" id="target-fps" min="1" max="30" value="10" step="1">
+                        <span class="range-value" id="fps-value">10</span>
+                        <button onclick="updateSegmentFromInputs()">Update</button>
+                        <button onclick="loadSegment()">Load Frames</button>
+                    </div>
+                </div>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p>Loading frames...</p>
+                </div>
+                
+                <div class="processing-status" id="processing-status">
+                    <div class="processing-header">
+                        <h4>Background YOLO Processing</h4>
+                        <span class="processing-info" id="processing-info">0 / 0 frames</span>
+                    </div>
+                    <div class="processing-bar">
+                        <div class="processing-progress" id="processing-progress" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div id="frame-viewer">
+                    <div class="instructions">
+                        Use <span class="keyboard-hint">←</span> <span class="keyboard-hint">→</span> to navigate,
+                        <span class="keyboard-hint">Space</span> to select/deselect,
+                        <span class="keyboard-hint">P</span> to predict (if YOLO enabled),
+                        <span class="keyboard-hint">Enter</span> to finish
+                    </div>
+
+                    <div class="frame-info" id="frame-info"></div>
+
+                    <div class="annotation-info" id="annotation-info">
+                        <h4>YOLO Predictions</h4>
+                        <div class="annotation-list" id="annotation-list">
+                            </div>
+                    </div>
+
+                    <div class="correction-controls" id="correction-controls">
+                        <h4>🔧 Correction Mode</h4>
+                        <p>Click on misclassified objects to mark them as "Other"</p>
+                        <button onclick="clearAllCorrections()">Clear All Corrections</button>
+                        <button onclick="toggleCorrectionMode()">Exit Correction Mode</button>
+                    </div>
+
+                    <div class="frame-display-container">
+                        <div class="frame-display">
+                            <img id="frame-image" src="" alt="Video frame">
+                            <div class="bbox-overlay" id="bbox-overlay"></div>
+                        </div>
+                        <div class="frame-placeholder" id="frame-placeholder">
+                            <div class="placeholder-spinner"></div>
                         </div>
                     </div>
-                    <div class="button-group">
-                        <button onclick="saveRoboflowConfig()" class="roboflow-btn">Save Configuration</button>
-                        <button onclick="testRoboflowConnection()">Test Connection</button>
+
+                    <div class="frame-controls">
+                        <button onclick="previousFrame()">← Previous</button>
+                        <button onclick="toggleSelection()">Toggle Selection</button>
+                        <button onclick="toggleCorrectionMode()" class="roboflow-btn" id="correction-btn">🔧 Correct Labels</button>
+                        <button onclick="nextFrame()">Next →</button>
+                    </div>
+
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <div class="upload-section fade-in-section">
-            <h2>Add Videos</h2>
-
-            <div class="input-group">
-                <label for="youtube-url">YouTube URL:</label>
-                <input type="text" id="youtube-url" placeholder="https://www.youtube.com/watch?v=...">
-            </div>
-
-            <div class="input-group">
-                <label for="file-upload">Or upload a video file:</label>
-                <input type="file" id="file-upload" accept="video/*">
-            </div>
-
-            <div class="button-group">
-                <button onclick="addYouTubeVideo()">Add YouTube Video</button>
-                <button onclick="uploadFile()">Upload File</button>
-            </div>
-        </div>
-
-        <div class="video-list fade-in-section" id="video-list">
-            <h2>Video Queue</h2>
-            <div id="video-items"></div>
-            <button onclick="startProcessing()" id="start-btn">Start Processing</button>
-        </div>
-
-        <div class="frame-selector">
-            <h2 id="current-video-title">Processing Video</h2>
-
-            <div class="video-preview">
-                <video id="video-player" controls></video>
-            </div>
-
-            <div class="timeline-container">
-                <h3>Select Video Segment</h3>
-                <div class="timeline" id="timeline">
-                    <div class="timeline-selection" id="timeline-selection">
-                        <div class="timeline-handle left"></div>
-                        <div class="timeline-handle right"></div>
-                        <div class="timeline-time start" id="time-start">0:00</div>
-                        <div class="timeline-time end" id="time-end">0:30</div>
-                    </div>
-                </div>
-                <div class="timeline-info">
-                    <span id="video-duration">Duration: 0:00</span>
-                    <span id="segment-duration">Selected: 30s</span>
-                </div>
-
-                <div class="segment-controls">
-                    <label>Start:</label>
-                    <input type="number" id="start-time" min="0" value="0" step="0.1">
-                    <label>Duration:</label>
-                    <input type="number" id="duration" min="1" max="60" value="30" step="1">
-                    <label>FPS:</label>
-                    <input type="range" id="target-fps" min="1" max="30" value="10" step="1">
-                    <span class="range-value" id="fps-value">10</span>
-                    <button onclick="updateSegmentFromInputs()">Update</button>
-                    <button onclick="loadSegment()">Load Frames</button>
+                
+                <div class="step-actions">
+                    <button onclick="proceedToStep(4)" class="btn-primary">Continue to Upload</button>
+                    <button onclick="goBackToStep(2)" class="btn-secondary">Back to Models</button>
                 </div>
             </div>
-
-            <div class="loading" id="loading">
-                <div class="spinner"></div>
-                <p>Loading frames...</p>
+        </div>
+        
+        <!-- Step 4: Upload to Roboflow -->
+        <div class="workflow-step" id="step-4" data-step="4" style="display: none;">
+            <div class="step-header">
+                <h2>☁️ Step 4: Upload to Roboflow</h2>
+                <p class="step-description">Configure your Roboflow project and upload the labeled frames</p>
             </div>
             
-            <div class="processing-status" id="processing-status">
-                <div class="processing-header">
-                    <h4>Background YOLO Processing</h4>
-                    <span class="processing-info" id="processing-info">0 / 0 frames</span>
+            <div class="roboflow-section">
+                <h3>Roboflow Configuration <span id="roboflow-status-step4" class="roboflow-status disconnected">Not Connected</span></h3>
+                <div class="input-group">
+                    <label for="roboflow-url-step4">Roboflow Project URL:</label>
+                    <input type="text" id="roboflow-url-step4" placeholder="https://app.roboflow.com/workspace/project">
                 </div>
-                <div class="processing-bar">
-                    <div class="processing-progress" id="processing-progress" style="width: 0%"></div>
+                <div class="input-group">
+                    <label for="roboflow-api-key-step4">Roboflow API Key:</label>
+                    <input type="password" id="roboflow-api-key-step4" placeholder="Your Roboflow API key">
+                </div>
+                <div class="input-grid">
+                    <div class="input-group">
+                        <label for="roboflow-batch-name-step4">Custom Batch Name (Optional):</label>
+                        <input type="text" id="roboflow-batch-name-step4" placeholder="Defaults to video name">
+                    </div>
+                    <div class="input-group">
+                        <label for="roboflow-split-step4">Upload to Split:</label>
+                        <select id="roboflow-split-step4">
+                            <option value="train" selected>Train</option>
+                            <option value="valid">Valid</option>
+                            <option value="test">Test</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="button-group">
+                    <button onclick="saveRoboflowConfig()" class="roboflow-btn">Save Configuration</button>
+                    <button onclick="testRoboflowConnection()">Test Connection</button>
                 </div>
             </div>
-
-            <div id="frame-viewer">
-                <div class="instructions">
-                    Use <span class="keyboard-hint">←</span> <span class="keyboard-hint">→</span> to navigate,
-                    <span class="keyboard-hint">Space</span> to select/deselect,
-                    <span class="keyboard-hint">P</span> to predict (if YOLO enabled),
-                    <span class="keyboard-hint">Enter</span> to finish
-                </div>
-
-                <div class="frame-info" id="frame-info"></div>
-
-                <div class="annotation-info" id="annotation-info">
-                    <h4>YOLO Predictions</h4>
-                    <div class="annotation-list" id="annotation-list">
-                        </div>
-                </div>
-
-                <div class="correction-controls" id="correction-controls">
-                    <h4>🔧 Correction Mode</h4>
-                    <p>Click on misclassified objects to mark them as "Other"</p>
-                    <button onclick="clearAllCorrections()">Clear All Corrections</button>
-                    <button onclick="toggleCorrectionMode()">Exit Correction Mode</button>
-                </div>
-
-                <div class="frame-display-container">
-                    <div class="frame-display">
-                        <img id="frame-image" src="" alt="Video frame">
-                        <div class="bbox-overlay" id="bbox-overlay"></div>
-                    </div>
-                    <div class="frame-placeholder" id="frame-placeholder">
-                        <div class="placeholder-spinner"></div>
-                    </div>
-                </div>
-
-                <div class="frame-controls">
-                    <button onclick="previousFrame()">← Previous</button>
-                    <button onclick="toggleSelection()">Toggle Selection</button>
-                    <button onclick="toggleCorrectionMode()" class="roboflow-btn" id="correction-btn">🔧 Correct Labels</button>
-                    <button onclick="nextFrame()">Next →</button>
-                </div>
-
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progress-fill" style="width: 0%">0%</div>
-                </div>
-
-                <button onclick="finishVideo()" class="full-width-btn">Finish This Video</button>
-                <button onclick="showMainMenu()" class="full-width-btn secondary-btn">Back to Video List</button>
+            
+            <div class="step-actions">
+                <button onclick="uploadToRoboflow()" class="btn-primary">Upload to Roboflow</button>
+                <button onclick="goBackToStep(3)" class="btn-secondary">Back to Frames</button>
             </div>
         </div>
+        
     </div>
 
     <script src="/static/js/ui.js"></script>
@@ -273,6 +352,7 @@
     <script src="/static/js/events.js"></script>
     <script src="/static/js/main.js"></script>
     <script src="/static/js/tabs.js"></script>
+    <script src="/static/js/workflow.js"></script>
 
 </body>
 </html>

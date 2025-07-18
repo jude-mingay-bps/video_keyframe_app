@@ -22,8 +22,8 @@ class Config:
     THREADS_PER_PAGE = 8  # Number of threads for processing
     
     # Frame extraction settings
-    FRAME_EXTRACTION_THREADS = 8  # Parallel frame extraction
-    FRAME_JPEG_QUALITY = 70  # Lower quality for faster loading
+    FRAME_EXTRACTION_THREADS = 16  # Parallel frame extraction (increased)
+    FRAME_JPEG_QUALITY = 60  # Balanced quality for performance
     
     # Create directories if they don't exist
     for folder in [UPLOAD_FOLDER, OUTPUT_FOLDER, TEMP_FOLDER, MODELS_FOLDER]:

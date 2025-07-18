@@ -1,9 +1,90 @@
 let backgroundProcessingInterval = null;
 
+// Frame preloading system
+class FramePreloader {
+    constructor() {
+        this.preloadedFrames = new Map();
+        this.preloadRadius = 3;
+        this.maxCacheSize = 50;
+        this.isPreloading = false;
+    }
+    
+    preloadAroundFrame(frameIndex) {
+        if (this.isPreloading || !frames.length) return;
+        
+        this.isPreloading = true;
+        
+        const start = Math.max(0, frameIndex - this.preloadRadius);
+        const end = Math.min(frames.length, frameIndex + this.preloadRadius + 1);
+        
+        // Preload frames around current frame
+        for (let i = start; i < end; i++) {
+            if (!this.preloadedFrames.has(i)) {
+                this.preloadFrame(i);
+            }
+        }
+        
+        // Clean up old preloaded frames
+        this.cleanupOldFrames(frameIndex);
+        
+        this.isPreloading = false;
+    }
+    
+    preloadFrame(index) {
+        if (this.preloadedFrames.has(index) || !frames[index]) return;
+        
+        const img = new Image();
+        img.onload = () => {
+            this.preloadedFrames.set(index, img);
+            // Limit cache size
+            if (this.preloadedFrames.size > this.maxCacheSize) {
+                this.cleanupOldFrames(index);
+            }
+        };
+        img.onerror = () => {
+            console.warn(`Failed to preload frame ${index}`);
+        };
+        img.src = `data:image/jpeg;base64,${frames[index].data}`;
+    }
+    
+    cleanupOldFrames(currentIndex) {
+        if (this.preloadedFrames.size <= this.maxCacheSize) return;
+        
+        const toRemove = [];
+        for (const [index, img] of this.preloadedFrames) {
+            const distance = Math.abs(index - currentIndex);
+            if (distance > this.preloadRadius * 2) {
+                toRemove.push(index);
+            }
+        }
+        
+        // Remove furthest frames first
+        toRemove.sort((a, b) => Math.abs(b - currentIndex) - Math.abs(a - currentIndex));
+        
+        while (this.preloadedFrames.size > this.maxCacheSize && toRemove.length > 0) {
+            const indexToRemove = toRemove.pop();
+            this.preloadedFrames.delete(indexToRemove);
+        }
+    }
+    
+    getPreloadedFrame(index) {
+        return this.preloadedFrames.get(index);
+    }
+    
+    clear() {
+        this.preloadedFrames.clear();
+    }
+}
+
+const framePreloader = new FramePreloader();
+
 async function loadSegment() {
     document.getElementById('loading').style.display = 'block';
     document.getElementById('frame-viewer').style.display = 'none';
     document.getElementById('processing-status').style.display = 'none';
+    
+    // Clear preloader cache
+    framePreloader.clear();
     
     // Reset the first frame flag
     if (typeof isFirstFrame !== 'undefined') {
@@ -56,10 +137,13 @@ async function loadSegment() {
             displayFrame();
             showToast(`Loaded ${frames.length} frames at ${targetFps} FPS`, 'success');
 
-            // Start monitoring background processing if prediction mode is enabled
-            if (predictionMode && modelInfo) {
-                startBackgroundProcessingMonitor();
-            }
+            // Start preloading frames around current frame
+            setTimeout(() => {
+                framePreloader.preloadAroundFrame(currentFrameIndex);
+            }, 100);
+
+            // Always start monitoring background processing when frames are loaded
+            startBackgroundProcessingMonitor();
 
             if (predictionMode) {
                 runPrediction();
@@ -142,6 +226,10 @@ function previousFrame() {
         currentFrameIndex--;
         updateFrameDisplay();
         displayFrame();
+        
+        // Preload frames around new position
+        framePreloader.preloadAroundFrame(currentFrameIndex);
+        
         if (predictionMode) {
             runPrediction();
         }
@@ -157,6 +245,10 @@ function nextFrame() {
         currentFrameIndex++;
         updateFrameDisplay();
         displayFrame();
+        
+        // Preload frames around new position
+        framePreloader.preloadAroundFrame(currentFrameIndex);
+        
         if (predictionMode) {
             runPrediction();
         }

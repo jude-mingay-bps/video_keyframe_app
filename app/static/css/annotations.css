@@ -96,7 +96,7 @@
 }
 
 .correction-controls {
-    background: #fff5f5;
+    background: var(--surface-color);
     padding: 1rem;
     border-radius: var(--border-radius);
     margin: 1rem 0;

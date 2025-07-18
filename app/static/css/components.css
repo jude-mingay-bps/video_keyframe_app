@@ -1,38 +1,59 @@
 .upload-section, .roboflow-section, .yolo-section, .video-list, .frame-selector, .movenet-section, .yolo-pose-section {
-    background: var(--surface-color);
-    padding: 2rem;
+    background: var(--gradient-surface);
+    padding: 2.5rem;
     border-radius: var(--border-radius);
-    box-shadow: var(--shadow);
-    margin-bottom: 2rem;
+    box-shadow: var(--shadow-lg);
+    margin-bottom: 3rem;
     border: 1px solid var(--border-color);
+    position: relative;
+    overflow: hidden;
+    transition: var(--transition);
+    color: var(--text-color);
+}
+
+.upload-section::before, .roboflow-section::before, .yolo-section::before, .video-list::before, .frame-selector::before, .movenet-section::before, .yolo-pose-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: var(--gradient-primary);
+    opacity: 0.8;
+}
+
+.upload-section:hover, .roboflow-section:hover, .yolo-section:hover, .video-list:hover, .frame-selector:hover, .movenet-section:hover, .yolo-pose-section:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-xl);
 }
 
 .yolo-section, .roboflow-section, .movenet-section, .yolo-pose-section {
-    border-left: 5px solid;
+    border-left: none;
 }
 
-.yolo-section {
-    border-left-color: var(--success-color);
+.yolo-section::before {
+    background: linear-gradient(135deg, var(--success-color) 0%, #38a169 100%);
 }
 
-.roboflow-section {
-    border-left-color: var(--error-color);
+.roboflow-section::before {
+    background: linear-gradient(135deg, var(--error-color) 0%, #e53e3e 100%);
 }
 
-.movenet-section {
-    border-left-color: var(--primary-color);
+.movenet-section::before {
+    background: linear-gradient(135deg, var(--info-color) 0%, #3182ce 100%);
 }
 
-.yolo-pose-section {
-    border-left-color: var(--warning-color);
+.yolo-pose-section::before {
+    background: linear-gradient(135deg, var(--warning-color) 0%, #dd6b20 100%);
 }
 
 .processing-status {
-    background: #f9f9f9;
+    background: var(--surface-color);
     border: 1px solid var(--border-color);
     padding: 1rem;
     border-radius: var(--border-radius);
     margin: 1rem 0;
+    display: none;
 }
 
 .processing-header {
@@ -56,9 +77,10 @@
 .processing-bar {
     width: 100%;
     height: 10px;
-    background: #e0e0e0;
+    background: var(--surface-dark);
     border-radius: 5px;
     overflow: hidden;
+    border: 1px solid var(--border-color);
 }
 
 .processing-progress {
@@ -76,20 +98,25 @@ h2 {
     display: flex;
     align-items: center;
     gap: 0.8rem;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .yolo-section h2 {
     color: var(--success-color);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .roboflow-section h2 {
     color: var(--error-color);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .movenet-section h2 {
-    color: var(--primary-color);
+    color: var(--info-color);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .yolo-pose-section h2 {
     color: var(--warning-color);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }

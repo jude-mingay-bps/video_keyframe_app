@@ -103,3 +103,80 @@
         font-size: 0.9rem;
     }
 }
+
+/* Touch device improvements */
+@media (pointer: coarse) {
+    button {
+        min-height: 44px;
+        padding: 1rem 2rem;
+    }
+    
+    .tab-link {
+        min-height: 44px;
+        padding: 12px 24px;
+    }
+    
+    input[type="text"], input[type="file"], input[type="number"], input[type="password"], select {
+        min-height: 44px;
+        padding: 1rem 1.2rem;
+    }
+    
+    .range-container input[type="range"] {
+        height: 12px;
+    }
+    
+    .range-container input[type="range"]::-webkit-slider-thumb {
+        width: 24px;
+        height: 24px;
+    }
+    
+    .range-container input[type="range"]::-moz-range-thumb {
+        width: 24px;
+        height: 24px;
+    }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --background-color: #1a202c;
+        --surface-color: #2d3748;
+        --text-color: #f7fafc;
+        --muted-text-color: #a0aec0;
+        --border-color: #4a5568;
+    }
+    
+    body {
+        background: linear-gradient(135deg, #1a202c 0%, #2d3748 100%);
+    }
+    
+    .upload-option {
+        background: linear-gradient(135deg, #2d3748 0%, #4a5568 100%);
+    }
+    
+    .upload-divider span {
+        background: var(--surface-color);
+        color: var(--text-color);
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+    
+    .tab-link:hover {
+        transform: none;
+    }
+    
+    button:hover {
+        transform: none;
+    }
+    
+    .upload-option:hover {
+        transform: none;
+    }
+}

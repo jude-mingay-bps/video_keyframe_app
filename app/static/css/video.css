@@ -7,7 +7,7 @@
 
 .video-item {
     padding: 1rem 1.5rem;
-    background: #f9f9f9;
+    background: var(--surface-color);
     border-radius: var(--border-radius);
     margin-bottom: 1rem;
     display: flex;
@@ -18,7 +18,7 @@
 }
 
 .video-item:hover {
-    background: var(--surface-color);
+    background: var(--surface-light);
     box-shadow: var(--shadow);
     transform: translateY(-2px);
 }

@@ -221,10 +221,25 @@ function updateFrameDisplay() {
     const prediction = framePredictions.get(currentFrameIndex);
     const frameSource = prediction ? prediction.frame_data : frames[currentFrameIndex].data;
     
-    // Direct update - no fancy transitions
-    img.src = `data:image/jpeg;base64,${frameSource}`;
-    img.style.display = 'block';
-    img.style.opacity = '1';
+    // Try to use preloaded frame first
+    if (typeof framePreloader !== 'undefined') {
+        const preloadedFrame = framePreloader.getPreloadedFrame(currentFrameIndex);
+        if (preloadedFrame && preloadedFrame.complete) {
+            img.src = preloadedFrame.src;
+            img.style.display = 'block';
+            img.style.opacity = '1';
+        } else {
+            // Fallback to base64 loading
+            img.src = `data:image/jpeg;base64,${frameSource}`;
+            img.style.display = 'block';
+            img.style.opacity = '1';
+        }
+    } else {
+        // Direct update - no fancy transitions
+        img.src = `data:image/jpeg;base64,${frameSource}`;
+        img.style.display = 'block';
+        img.style.opacity = '1';
+    }
     
     // Update annotations
     if (prediction) {

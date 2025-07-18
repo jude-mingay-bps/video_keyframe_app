@@ -1,6 +1,6 @@
 
 .yolo-pose-section {
-    background: #fffaf2;
+    background: var(--surface-color);
     border-left-color: var(--warning-color);
 }
 
@@ -83,7 +83,7 @@
 }
 
 .yolo-pose-stat {
-    background: white;
+    background: var(--surface-light);
     padding: 0.5rem 0.8rem;
     border-radius: 6px;
     border: 1px solid var(--border-color);

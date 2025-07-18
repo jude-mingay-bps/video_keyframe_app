@@ -5,28 +5,59 @@
 }
 
 :root {
-    --primary-color: #6a11cb;
-    --secondary-color: #2575fc;
-    --background-color: #f0f2f5;
-    --surface-color: #ffffff;
-    --text-color: #333333;
-    --muted-text-color: #666666;
-    --border-color: #e0e0e0;
-    --success-color: #27ae60;
-    --error-color: #e74c3c;
-    --warning-color: #f39c12;
-    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
-    --border-radius: 12px;
-    --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    --primary-color: #6366f1;
+    --secondary-color: #c4b5fd;
+    --accent-color: #06b6d4;
+    --background-color: #0f172a;
+    --surface-color: #1e293b;
+    --surface-light: #334155;
+    --surface-dark: #0f172a;
+    --text-color: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --muted-text-color: #94a3b8;
+    --border-color: #475569;
+    --success-color: #10b981;
+    --error-color: #ef4444;
+    --warning-color: #f59e0b;
+    --info-color: #3b82f6;
+    --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', 'Monaco', monospace;
+    --border-radius: 16px;
+    --border-radius-sm: 8px;
+    --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 20px 25px rgba(0, 0, 0, 0.4);
+    --shadow-xl: 0 25px 50px rgba(0, 0, 0, 0.5);
+    --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --gradient-primary: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+    --gradient-accent: linear-gradient(135deg, var(--accent-color) 0%, var(--primary-color) 100%);
+    --gradient-surface: linear-gradient(135deg, var(--surface-color) 0%, var(--surface-light) 100%);
 }
 
 body {
     font-family: var(--font-family);
-    background-color: var(--background-color);
+    background: var(--background-color);
     color: var(--text-color);
     line-height: 1.6;
     font-size: 16px;
+    min-height: 100vh;
+    position: relative;
+    font-weight: 400;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: radial-gradient(circle at 20% 50%, rgba(76, 29, 149, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 40% 80%, rgba(16, 185, 129, 0.1) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: -1;
 }
 
 .container {
@@ -36,26 +67,50 @@ body {
 }
 
 header {
-    background: var(--surface-color);
-    box-shadow: var(--shadow);
-    padding: 2rem;
-    margin-bottom: 2rem;
+    background: var(--gradient-surface);
+    box-shadow: var(--shadow-lg);
+    padding: 3rem 2rem;
+    margin-bottom: 3rem;
     border-radius: var(--border-radius);
     text-align: center;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+
+header::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--gradient-primary);
+    opacity: 0.1;
+    pointer-events: none;
 }
 
 h1 {
-    font-size: 2.5rem;
-    font-weight: 800;
-    background: linear-gradient(45deg, var(--primary-color), var(--secondary-color));
+    font-size: 3rem;
+    font-weight: 900;
+    background: linear-gradient(135deg, #60a5fa 0%, #c4b5fd 50%, #34d399 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    margin-bottom: 0.5rem;
+    background-clip: text;
+    margin-bottom: 1rem;
+    letter-spacing: -0.02em;
+    position: relative;
+    z-index: 1;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .subtitle {
-    font-size: 1.2rem;
-    color: var(--muted-text-color);
+    font-size: 1.3rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    position: relative;
+    z-index: 1;
 }
 
 .loading {
@@ -84,4 +139,51 @@ h1 {
     font-size: 1rem;
     font-weight: 500;
     color: var(--muted-text-color);
+}
+
+/* Typography improvements */
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-family);
+    font-weight: 700;
+    line-height: 1.25;
+    margin-bottom: 1rem;
+    color: var(--text-color);
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern" 1;
+}
+
+h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+}
+
+p {
+    font-size: 1rem;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+/* Code and monospace elements */
+code, pre {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    background: var(--surface-dark);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    color: var(--text-color);
+}
+
+/* Better text rendering */
+* {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
 }

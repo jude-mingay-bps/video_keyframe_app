@@ -35,11 +35,12 @@
 }
 
 .model-info {
-    background: rgba(39, 174, 96, 0.05);
+    background: rgba(16, 185, 129, 0.1);
     padding: 1rem;
     border-radius: var(--border-radius);
     margin: 1rem 0;
     border: 1px solid var(--success-color);
+    color: var(--text-color);
 }
 
 .model-info h4 {
@@ -92,7 +93,7 @@
     left: 2px;
     width: 22px;
     height: 22px;
-    background: white;
+    background: var(--text-color);
     border-radius: 50%;
     transition: transform 0.3s;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
@@ -105,4 +106,13 @@
 .toggle-label {
     font-weight: 600;
     color: var(--text-color);
+}
+
+/* Fix for invisible text in model info */
+.model-info, .model-info * {
+    color: var(--text-color) !important;
+}
+
+.model-info h4 {
+    color: var(--success-color) !important;
 }
